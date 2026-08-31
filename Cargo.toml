@@ -1,0 +1,63 @@
+[package]
+name = "atlas"
+version = "0.1.0"
+edition = "2021"
+description = "Watch a loken cluster: what each node holds, what it measures, and where they disagree"
+repository = "https://github.com/loken-ai/atlas"
+license = "MIT OR Apache-2.0"
+keywords = ["monitoring", "cluster", "tui", "prometheus"]
+categories = ["command-line-utilities"]
+rust-version = "1.82"
+
+[lib]
+name = "atlas_core"
+path = "src/lib.rs"
+
+# Two views of one state, not two tools. A second crate would mean a second collector, and
+# two models of the cluster that drift - which is how the GUI ended up reading a flag the
+# server stopped emitting.
+[[bin]]
+name = "atlas"
+path = "src/bin/atlas.rs"
+
+[[bin]]
+name = "atlas-gui"
+path = "src/bin/atlas-gui.rs"
+required-features = ["gui"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net"] }
+toml = "0.8"
+ratatui = "0.29"
+crossterm = "0.28"
+# SO_REUSEADDR on the discovery socket: a node on this host already holds the port, and that
+# is exactly the machine an operator watches from.
+socket2 = { version = "0.5", features = ["all"] }
+
+eframe = { version = "0.35", default-features = false, features = ["glow", "default_fonts"], optional = true }
+egui = { version = "0.35", optional = true }
+egui_extras = { version = "0.35", features = ["svg"], optional = true }
+
+# `wayland` and `x11` are the LINUX platform backends: without one of them the eframe -> winit
+# chain has no platform implementation and the build stops on winit's "platform not supported".
+# They mean nothing elsewhere and pull x11-dl in when enabled there, so they live here.
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.35", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"], optional = true }
+
+[features]
+default = ["gui"]
+# The core knows neither ratatui nor egui. Turning this off builds `atlas` alone, without
+# X11, Wayland or a GPU stack - which is what an exporter running as a service wants.
+gui = ["dep:eframe", "dep:egui", "dep:egui_extras"]
+
+[dev-dependencies]
+# Renders the documentation screenshots from the layout code the application runs. kittest
+# offers wgpu and no other renderer, so the pixels come from a different rasteriser than the
+# glow the binary ships with; the layout is egui's own code either way, and this never leaves
+# the test profile.
+egui_kittest = { version = "0.35.0", features = ["wgpu", "snapshot", "eframe"] }
