@@ -186,8 +186,10 @@ mod tests {
             "how many nodes it is watching"
         );
         assert!(
-            harness.query_by_label_contains("no-peer-view").is_some(),
-            "doctor's verdict"
+            harness
+                .query_by_label_contains("does not report who it sees")
+                .is_some(),
+            "doctor's verdict, as a sentence"
         );
     }
 
