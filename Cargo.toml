@@ -7,7 +7,7 @@ repository = "https://github.com/loken-ai/atlas"
 license = "MIT OR Apache-2.0"
 keywords = ["monitoring", "cluster", "tui", "prometheus"]
 categories = ["command-line-utilities"]
-rust-version = "1.82"
+rust-version = "1.92"
 
 [lib]
 name = "atlas_core"

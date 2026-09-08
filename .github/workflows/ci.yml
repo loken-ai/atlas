@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # A warning nobody has to act on is a warning everybody learns to scroll past.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # eframe links against the X11 and Wayland client libraries.
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # The screenshots need a GPU adapter, which a runner does not have; they are ignored
+      # and the rest runs.
+      - name: Tests
+        run: cargo test --all-targets
+
+      # A link to a type that has been renamed is a broken link, and nobody notices
+      # until someone reads the documentation.
+      - name: Docs
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      # The core knows neither ratatui nor egui; this keeps the exporter buildable without a
+      # display stack.
+      - name: Build without the window
+        run: cargo check --no-default-features --all-targets
+
+  msrv:
+    name: minimum supported Rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev
+      - run: cargo check --all-targets
+
+  standalone:
+    name: no path dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The org keeps one repository per binary. A `path = "..."` added in a hurry would
+      # quietly couple two repositories that are meant to be buildable on their own.
+      - name: Reject path dependencies
+        run: |
+          if grep -nE '^\s*[A-Za-z0-9_-]+\s*=.*\bpath\s*=' Cargo.toml; then
+            echo "::error::this crate must build on its own - no path dependencies"
+            exit 1
+          fi
+
+  audit:
+    name: dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny check
