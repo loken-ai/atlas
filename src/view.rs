@@ -229,10 +229,9 @@ pub fn findings(ui: &mut egui::Ui, findings: &[crate::doctor::Finding]) {
         ui.horizontal(|ui| {
             Icon::Warning.show(ui, 12.0, WARN);
             ui.label(
-                RichText::new(finding.rule)
+                RichText::new(crate::doctor::title(finding.rule))
                     .size(11.0)
-                    .color(WARN)
-                    .monospace(),
+                    .color(WARN),
             );
             ui.label(RichText::new(&finding.detail).size(11.0).color(TEXT));
         });

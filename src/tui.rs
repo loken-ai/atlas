@@ -183,7 +183,7 @@ fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
             .iter()
             .map(|f| {
                 Line::styled(
-                    format!("{:<24} {}", f.rule, f.detail),
+                    format!("{}: {}", crate::doctor::title(f.rule), f.detail),
                     Style::default().fg(Color::Yellow),
                 )
             })
