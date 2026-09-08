@@ -27,21 +27,21 @@
 <text x="260.4" y="234.0" fill="#f85149" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">offline   </text>
 <text x="344.4" y="234.0" fill="#e6edf3" textLength="462.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   228ms  -                                           │</text>
 <text x="0.0" y="251.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8.4" y="251.0" fill="#f85149" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    /health: error sending request</text>
-<text x="294.0" y="251.0" fill="#e6edf3" textLength="512.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                                                            │</text>
-<text x="0.0" y="268.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
+<text x="8.4" y="251.0" fill="#8b949e" textLength="193.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    no devices reported</text>
+<text x="201.6" y="251.0" fill="#e6edf3" textLength="604.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                                                                       │</text>
+<text x="0.0" y="268.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="8.4" y="268.0" fill="#f85149" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    /health: error sending request</text>
+<text x="294.0" y="268.0" fill="#e6edf3" textLength="512.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                                                            │</text>
 <text x="0.0" y="285.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
 <text x="0.0" y="302.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
-<text x="0.0" y="319.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└──────────────────────────────────────────────────────────────────────────────────────────────┘</text>
-<text x="0.0" y="336.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┌ doctor ──────────────────────────────────────────────────────────────────────────────────────┐</text>
-<text x="0.0" y="353.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8.4" y="353.0" fill="#d29922" textLength="588.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">foreign-cluster          staging announcing at http://192.0.2.40:11435</text>
-<text x="596.4" y="353.0" fill="#e6edf3" textLength="210.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                        │</text>
+<text x="0.0" y="319.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
+<text x="0.0" y="336.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└──────────────────────────────────────────────────────────────────────────────────────────────┘</text>
+<text x="0.0" y="353.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┌ doctor ──────────────────────────────────────────────────────────────────────────────────────┐</text>
 <text x="0.0" y="370.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8.4" y="370.0" fill="#d29922" textLength="596.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">no-peer-view             http://192.0.2.10:11435 publishes no peer view</text>
-<text x="604.8" y="370.0" fill="#e6edf3" textLength="201.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                       │</text>
+<text x="8.4" y="370.0" fill="#d29922" textLength="789.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Another cluster is announcing itself on this network: staging announcing at http://192.0.2.40:</text>
+<text x="798.0" y="370.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="0.0" y="387.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8.4" y="387.0" fill="#d29922" textLength="596.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">catalogue-silent         http://192.0.2.11:11435 publishes no catalogue</text>
-<text x="604.8" y="387.0" fill="#e6edf3" textLength="201.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                       │</text>
+<text x="8.4" y="387.0" fill="#d29922" textLength="688.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">A node does not report who it sees: http://192.0.2.10:11435 publishes no peer view</text>
+<text x="697.2" y="387.0" fill="#e6edf3" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">            │</text>
 <text x="0.0" y="404.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└──────────────────────────────────────────────────────────────────────────────────────────────┘</text>
 </svg>

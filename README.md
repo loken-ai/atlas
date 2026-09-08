@@ -10,10 +10,12 @@ cargo build --release
 
 Three tools over one collector.
 
-- **`atlas watch`** - the living map. Nodes, their devices, what is loaded, what is in flight,
-  and the round trips between them.
-- **`atlas doctor`** - the inconsistencies a cluster swallows in silence. Exits with the number
-  of rules that fired.
+- **`atlas watch`** - the living map. Nodes, their devices, the models resident on each with
+  the layers every device holds, what is in flight, the round trips between them, and the
+  doctor's verdict in words. A node that reports no device says so rather than leaving a
+  blank.
+- **`atlas doctor`** - the inconsistencies a cluster swallows in silence, each as a sentence
+  naming the nodes by their id. Exits with the number of rules that fired.
 - **`atlas export`** - OpenMetrics for the facts no single node holds: round trips as the
   observer measures them, membership, versions, and doctor's verdicts.
 
@@ -30,6 +32,25 @@ address, host or model. Regenerate them with
 `cargo test --release --all-features screenshots -- --ignored`.
 
 Node addresses come from `--node`, from a config file, or from listening. None are compiled in.
+A bare `host:port` is taken as `http://`, and both binaries listen for announcements before
+deciding they have no node to watch. The same daemon reached at two addresses, `localhost` and
+the one it advertises, is one node: nodes are told apart by the id they give themselves.
+
+## What doctor reports
+
+| Finding | What it means |
+|---|---|
+| Another cluster is announcing itself on this network | Only a passive listener can see it: every node drops a name mismatch in silence |
+| Two nodes share one id | Each hides the other, since a node filters its own announcements on that id |
+| The nodes do not all see each other | A partition where both halves still answer the observer |
+| A node does not report who it sees | A build older than the peers route |
+| A node publishes no catalogue | The router then prices it on what it has in memory alone |
+| Energy is reported on part of the cluster only | Any cluster total would be partial |
+| A node answers but is not in a cluster | It runs without a `[cluster]` block |
+| The nodes run different versions | |
+
+Nodes holding different models is not a finding. Models spread over the cluster and a request
+is forwarded to a holder; that is the cluster working as designed.
 
 ## Where it is careful
 
@@ -55,6 +76,13 @@ emitted rather than a sum that reads as complete.
 
 **The round trip is taken on the request already being made**, never on a separate ping, which
 would measure a path the router does not price.
+
+## Building
+
+`cargo build --release` builds both binaries; `--no-default-features` builds `atlas` alone,
+without the window and its display stack. The minimum toolchain is the one the window's
+libraries require, stated in `Cargo.toml`; the workflow checks it, along with formatting, the
+lints, the tests, the documentation and the dependency audit.
 
 ## Licence
 
