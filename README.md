@@ -15,7 +15,7 @@ Three tools over one collector.
 - **`atlas doctor`** - the inconsistencies a cluster swallows in silence. Exits with the number
   of rules that fired.
 - **`atlas export`** - OpenMetrics for the facts no single node holds: round trips as the
-  observer measures them, membership, version and catalogue skew, and doctor's verdicts.
+  observer measures them, membership, versions, and doctor's verdicts.
 
 `atlas-gui` draws the same state and takes the same flags. Two views of one cluster, not two
 tools: a second collector would mean a second model of the cluster, and two models drift.

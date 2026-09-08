@@ -117,7 +117,6 @@ pub fn encode(snapshot: &ClusterSnapshot, findings: &[Finding]) -> String {
         ("asymmetric-membership", 0.0),
         ("no-peer-view", 0.0),
         ("catalogue-silent", 0.0),
-        ("catalogue-skew", 0.0),
         ("partial-energy", 0.0),
         ("not-clustered", 0.0),
         ("version-skew", 0.0),

@@ -31,7 +31,6 @@ pub fn title(rule: &str) -> &'static str {
         "asymmetric-membership" => "The nodes do not all see each other",
         "no-peer-view" => "A node does not report who it sees",
         "catalogue-silent" => "A node publishes no catalogue",
-        "catalogue-skew" => "The nodes do not serve the same models",
         "partial-energy" => "Energy is reported on part of the cluster only",
         "not-clustered" => "A node answers but is not in a cluster",
         "version-skew" => "The nodes run different versions",
@@ -134,37 +133,21 @@ pub fn no_peer_endpoint(s: &ClusterSnapshot) -> Vec<Finding> {
         .collect()
 }
 
-/// Nodes that do not agree on what they can serve.
-pub fn catalogue_skew(s: &ClusterSnapshot) -> Vec<Finding> {
-    let mut said: Vec<(&str, usize)> = Vec::new();
-    let mut silent = Vec::new();
-    for n in &s.nodes {
-        match n.state.as_ref().and_then(|st| st.serves.as_ref()) {
-            // Silence is not an empty catalogue, and is reported as its own thing.
-            None => silent.push(name(n)),
-            Some(c) => said.push((name(n), c.len())),
-        }
-    }
-    let mut out: Vec<Finding> = silent
-        .into_iter()
-        .map(|e| f("catalogue-silent", format!("{e} publishes no catalogue")))
-        .collect();
-    if said.len() > 1 {
-        let (min, max) = (
-            said.iter().min_by_key(|(_, n)| *n).unwrap(),
-            said.iter().max_by_key(|(_, n)| *n).unwrap(),
-        );
-        if min.1 != max.1 {
-            out.push(f(
-                "catalogue-skew",
-                format!(
-                    "{} serves {} models, {} serves {}",
-                    min.0, min.1, max.0, max.1
-                ),
-            ));
-        }
-    }
-    out
+/// A node that publishes no catalogue. Nodes holding different models is the design, the
+/// models spread over the cluster and a request is forwarded to a holder, so differing
+/// catalogues are never a finding; silence about one is, since the router then prices that
+/// node on residency alone.
+pub fn silent_catalogue(s: &ClusterSnapshot) -> Vec<Finding> {
+    s.nodes
+        .iter()
+        .filter(|n| n.state.as_ref().is_some_and(|st| st.serves.is_none()))
+        .map(|n| {
+            f(
+                "catalogue-silent",
+                format!("{} publishes no catalogue", name(n)),
+            )
+        })
+        .collect()
 }
 
 /// Energy off on part of the cluster, which makes every total partial.
@@ -224,7 +207,7 @@ pub fn all(s: &ClusterSnapshot) -> Vec<Finding> {
         duplicate_node_id,
         asymmetric_membership,
         no_peer_endpoint,
-        catalogue_skew,
+        silent_catalogue,
         partial_energy,
         standing_but_alone,
         version_skew,
@@ -317,7 +300,7 @@ mod tests {
 
     /// Silence about a catalogue is its own finding, not a skew against an empty one.
     #[test]
-    fn a_silent_catalogue_is_not_a_skew() {
+    fn a_silent_catalogue_is_reported_and_a_different_one_is_not() {
         let a = node("http://a", "a");
         let mut b = node("http://b", "b");
         b.state.as_mut().unwrap().serves = None;
@@ -325,9 +308,17 @@ mod tests {
             nodes: vec![a, b],
             ..Default::default()
         };
-        let found = catalogue_skew(&s);
+        let found = silent_catalogue(&s);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].rule, "catalogue-silent");
+        // Two nodes serving different models is the cluster working as designed.
+        let mut c = node("http://c", "c");
+        c.state.as_mut().unwrap().serves = Some(vec!["only-here".into()]);
+        let spread = ClusterSnapshot {
+            nodes: vec![node("http://a", "a"), c],
+            ..Default::default()
+        };
+        assert!(silent_catalogue(&spread).is_empty());
     }
 
     #[test]
