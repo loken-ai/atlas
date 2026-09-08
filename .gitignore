@@ -4,3 +4,5 @@ results/
 *.json
 *.csv
 *.log
+# A fixture a test reads is source, whatever its extension.
+!tests/*.json
