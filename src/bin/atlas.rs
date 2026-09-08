@@ -99,7 +99,7 @@ async fn main() -> ExitCode {
             snapshot.foreign = foreign;
             let findings = doctor::all(&snapshot);
             for f in &findings {
-                println!("{:<24} {}", f.rule, f.detail);
+                println!("{}: {}", doctor::title(f.rule), f.detail);
             }
             // The exit status is the number of rules that fired, as `preflight.sh` does.
             ExitCode::from(u8::try_from(findings.len()).unwrap_or(u8::MAX))

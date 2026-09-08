@@ -302,6 +302,30 @@ mod tests {
         assert!(!header_line(&whole).contains("partial"));
     }
 
+    /// A resident model is drawn with its name, its layer count and each run of layers on
+    /// a device, the last layer included.
+    #[test]
+    fn a_resident_model_is_drawn_with_its_layers_per_device() {
+        let mut n = node();
+        n.placements = vec![crate::model::Placement {
+            model_id: "qwen3:0.6b".into(),
+            total_layers: 28,
+            segments: vec![crate::model::Segment {
+                device_type: "CUDA".into(),
+                device_id: 0,
+                first: 0,
+                last: 27,
+                memory_bytes: 522_640_096,
+            }],
+        }];
+        let text: String = node_lines(&n)
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.to_string()))
+            .collect();
+        assert!(text.contains("qwen3:0.6b - 28 layers"), "{text}");
+        assert!(text.contains("CUDA:0 L0-27 (28 layers)"), "{text}");
+    }
+
     /// A node that failed shows the reason, rather than an empty card that reads as healthy.
     #[test]
     fn an_error_is_shown_on_the_node_it_belongs_to() {

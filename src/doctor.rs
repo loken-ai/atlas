@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::model::{ClusterSnapshot, Health};
+use crate::model::{ClusterSnapshot, Health, Node};
 
 /// One thing that is wrong, and how it was seen.
 #[derive(Debug, Clone, PartialEq)]
@@ -20,6 +20,33 @@ fn f(rule: &'static str, detail: impl Into<String>) -> Finding {
         rule,
         detail: detail.into(),
     }
+}
+
+/// What a rule means, in a sentence. The slug names the rule in metrics and exit codes; a
+/// person reading the report gets the sentence.
+pub fn title(rule: &str) -> &'static str {
+    match rule {
+        "foreign-cluster" => "Another cluster is announcing itself on this network",
+        "duplicate-node-id" => "Two nodes share one id, so each hides the other",
+        "asymmetric-membership" => "The nodes do not all see each other",
+        "no-peer-view" => "A node does not report who it sees",
+        "catalogue-silent" => "A node publishes no catalogue",
+        "catalogue-skew" => "The nodes do not serve the same models",
+        "partial-energy" => "Energy is reported on part of the cluster only",
+        "not-clustered" => "A node answers but is not in a cluster",
+        "version-skew" => "The nodes run different versions",
+        _ => "Unnamed finding",
+    }
+}
+
+/// How a node is named in a finding: by the id it gives itself, or by its address until it
+/// has answered.
+fn name(n: &Node) -> &str {
+    n.state
+        .as_ref()
+        .map(|s| s.node_id.as_str())
+        .filter(|id| !id.is_empty())
+        .unwrap_or(n.endpoint.as_str())
 }
 
 /// A foreign cluster on the same network.
@@ -114,8 +141,8 @@ pub fn catalogue_skew(s: &ClusterSnapshot) -> Vec<Finding> {
     for n in &s.nodes {
         match n.state.as_ref().and_then(|st| st.serves.as_ref()) {
             // Silence is not an empty catalogue, and is reported as its own thing.
-            None => silent.push(n.endpoint.as_str()),
-            Some(c) => said.push((n.endpoint.as_str(), c.len())),
+            None => silent.push(name(n)),
+            Some(c) => said.push((name(n), c.len())),
         }
     }
     let mut out: Vec<Finding> = silent
