@@ -60,11 +60,6 @@ async fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         };
-    if endpoints.is_empty() {
-        eprintln!("no nodes: pass --node URL, or --config with a [cluster] block");
-        return ExitCode::from(2);
-    }
-
     // Listening, never announcing: a probe that joins the group becomes a peer the router can
     // hand work to. It is also the only way to see a cluster that is not this one.
     let mut endpoints = endpoints;
@@ -81,6 +76,10 @@ async fn main() -> ExitCode {
         if let Some(problem) = problem {
             eprintln!("{problem}");
         }
+    }
+    if endpoints.is_empty() {
+        eprintln!("no nodes: pass --node URL, or --config with a [cluster] block");
+        return ExitCode::from(2);
     }
 
     match cli.command.unwrap_or(Command::Watch { every: 5 }) {

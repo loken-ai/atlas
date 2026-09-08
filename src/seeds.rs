@@ -35,9 +35,21 @@ pub fn from_flags_and_file(
             out.extend(section.join);
         }
     }
+    let mut out: Vec<String> = out.iter().map(|e| normalise(e)).collect();
     out.sort();
     out.dedup();
     Ok((out, cluster))
+}
+
+/// One spelling per address: a scheme when none was given, no trailing slash. A bare
+/// `host:port` is what an operator types, and a client refuses it without a scheme.
+pub fn normalise(endpoint: &str) -> String {
+    let e = endpoint.trim().trim_end_matches('/');
+    if e.contains("://") {
+        e.to_string()
+    } else {
+        format!("http://{e}")
+    }
 }
 
 /// Listen once for announcements and fold what was heard into the seed list.
@@ -51,7 +63,7 @@ pub fn add_heard(
 ) -> (BTreeMap<String, String>, Option<String>) {
     match crate::discovery::listen(cluster, window) {
         Ok(heard) => {
-            endpoints.extend(heard.ours.into_values());
+            endpoints.extend(heard.ours.into_values().map(|e| normalise(&e)));
             endpoints.sort();
             endpoints.dedup();
             (heard.foreign, None)
@@ -68,6 +80,18 @@ pub fn add_heard(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An operator types `host:port`; a client refuses it without a scheme. One spelling
+    /// per address is also what lets two sources of the same node be told apart.
+    #[test]
+    fn a_bare_host_and_port_gets_a_scheme_and_loses_its_slash() {
+        assert_eq!(normalise("localhost:11435"), "http://localhost:11435");
+        assert_eq!(
+            normalise("http://192.0.2.10:11435/"),
+            "http://192.0.2.10:11435"
+        );
+        assert_eq!(normalise(" https://a:1 "), "https://a:1");
+    }
 
     /// Flags and the file are unioned and deduplicated, and the cluster name comes from the
     /// file. A node listed in both must appear once.

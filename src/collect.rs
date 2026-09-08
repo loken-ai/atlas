@@ -50,9 +50,9 @@ struct LoadedWire {
 
 #[derive(Deserialize)]
 struct LoadedModel {
-    #[serde(default)]
+    #[serde(default, alias = "model")]
     model_id: String,
-    #[serde(default)]
+    #[serde(default, alias = "num_layers")]
     total_layers: u32,
     #[serde(default)]
     layer_distribution: Vec<LayerWire>,
@@ -64,11 +64,23 @@ struct LayerWire {
     device_type: String,
     #[serde(default)]
     device_id: usize,
-    /// `[first, last]`, last INCLUSIVE.
+    /// `layer_start` and `layer_end`, the end INCLUSIVE, as the server writes them; the
+    /// `[first, last]` pair of an older build is read the same way.
     #[serde(default)]
-    layer_range: (u32, u32),
+    layer_start: u32,
+    #[serde(default)]
+    layer_end: u32,
+    #[serde(default)]
+    layer_range: Option<(u32, u32)>,
     #[serde(default)]
     memory_bytes: u64,
+}
+
+impl LayerWire {
+    fn range(&self) -> (u32, u32) {
+        self.layer_range
+            .unwrap_or((self.layer_start, self.layer_end))
+    }
 }
 
 #[derive(Deserialize)]
@@ -184,12 +196,15 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
                     segments: m
                         .layer_distribution
                         .into_iter()
-                        .map(|d| Segment {
-                            device_type: d.device_type,
-                            device_id: d.device_id,
-                            first: d.layer_range.0,
-                            last: d.layer_range.1,
-                            memory_bytes: d.memory_bytes,
+                        .map(|d| {
+                            let (first, last) = d.range();
+                            Segment {
+                                device_type: d.device_type,
+                                device_id: d.device_id,
+                                first,
+                                last,
+                                memory_bytes: d.memory_bytes,
+                            }
                         })
                         .collect(),
                 })
@@ -226,9 +241,19 @@ pub async fn poll(endpoints: &[String], cluster: Option<String>) -> ClusterSnaps
         .user_agent(concat!("atlas/", env!("CARGO_PKG_VERSION")))
         .build()
         .unwrap_or_default();
-    let mut nodes = Vec::with_capacity(endpoints.len());
+    let mut nodes: Vec<Node> = Vec::with_capacity(endpoints.len());
     for endpoint in endpoints {
-        nodes.push(poll_node(&client, endpoint).await);
+        let node = poll_node(&client, endpoint).await;
+        // The same daemon reached at two addresses - localhost and the one it advertises -
+        // is one node. Its id says so; the first address that reached it is kept.
+        let dup = node.state.as_ref().is_some_and(|s| {
+            nodes
+                .iter()
+                .any(|n| n.state.as_ref().is_some_and(|t| t.node_id == s.node_id))
+        });
+        if !dup {
+            nodes.push(node);
+        }
     }
     ClusterSnapshot {
         cluster,
@@ -279,6 +304,20 @@ mod tests {
         assert!(parsed.energy.is_none());
     }
 
+    /// The payload as the server writes it today: `model`, `num_layers`, and a run of
+    /// `layer_start`..`layer_end`, the end inclusive.
+    #[test]
+    fn the_server_s_loaded_payload_names_its_model_and_layers() {
+        let wire = r#"{"models":[{"model":"qwen3:0.6b","status":"loaded","device":"cuda",
+            "size_bytes":522640096,"num_layers":28,"layer_distribution":[{"device_type":"CUDA",
+            "device_id":0,"layer_start":0,"layer_end":27,"memory_bytes":522640096}]}]}"#;
+        let parsed: LoadedWire = serde_json::from_str(wire).expect("parses");
+        let m = &parsed.models[0];
+        assert_eq!(m.model_id, "qwen3:0.6b");
+        assert_eq!(m.total_layers, 28);
+        assert_eq!(m.layer_distribution[0].range(), (0, 27));
+    }
+
     /// `layer_range` is inclusive at both ends, and the segment must keep it that way.
     #[test]
     fn a_layer_range_keeps_its_last_layer() {
@@ -290,8 +329,8 @@ mod tests {
         let segment = Segment {
             device_type: d.device_type.clone(),
             device_id: d.device_id,
-            first: d.layer_range.0,
-            last: d.layer_range.1,
+            first: d.range().0,
+            last: d.range().1,
             memory_bytes: d.memory_bytes,
         };
         assert_eq!(segment.layers(), 12);
