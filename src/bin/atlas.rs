@@ -84,8 +84,13 @@ async fn main() -> ExitCode {
 
     match cli.command.unwrap_or(Command::Watch { every: 5 }) {
         Command::Watch { every } => {
-            return match atlas_core::tui::run(endpoints, cluster, Duration::from_secs(every.max(1)))
-                .await
+            return match atlas_core::tui::run(
+                endpoints,
+                cluster,
+                Duration::from_secs(every.max(1)),
+                foreign,
+            )
+            .await
             {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => {

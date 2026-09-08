@@ -3,6 +3,7 @@
 //! The rendering is a pure function of a `ClusterSnapshot`, so it is tested on snapshots built
 //! by hand and needs no terminal and no cluster. Only the loop below touches the screen.
 
+use std::collections::BTreeMap;
 use std::io;
 use std::time::Duration;
 
@@ -102,6 +103,14 @@ fn node_lines(node: &Node) -> Vec<Line<'static>> {
             Style::default().fg(Color::DarkGray),
         ));
     }
+    // A node with no device says so; a block that stops after its header reads as a node
+    // with nothing wrong.
+    if node.devices.is_empty() {
+        out.push(Line::styled(
+            "    no devices reported",
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
     for d in &node.devices {
         out.push(Line::raw(format!("    {}", device_line(d))));
     }
@@ -142,36 +151,18 @@ pub fn draw_for_test(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[
 }
 
 fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
-    let area = frame.area();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(6),
-            Constraint::Length((findings.len() as u16 + 2).min(10)),
-        ])
-        .split(area);
-
-    frame.render_widget(
-        Paragraph::new(header_line(snapshot))
-            .block(Block::default().borders(Borders::ALL).title(" atlas ")),
-        rows[0],
-    );
-
-    let mut lines = Vec::new();
+    // Both panels are composed before the layout, so each is sized from the lines it draws:
+    // an empty verdict is one line of words, never a frame around nothing.
+    let mut node_body = Vec::new();
     if snapshot.nodes.is_empty() {
-        lines.push(Line::styled(
+        node_body.push(Line::styled(
             "no node contacted",
             Style::default().fg(Color::DarkGray),
         ));
     }
     for node in &snapshot.nodes {
-        lines.extend(node_lines(node));
+        node_body.extend(node_lines(node));
     }
-    frame.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(" nodes ")),
-        rows[1],
-    );
 
     let verdict: Vec<Line> = if findings.is_empty() {
         vec![Line::styled(
@@ -189,6 +180,27 @@ fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
             })
             .collect()
     };
+
+    // A bordered panel spends two rows on its own frame; the cap bounds what a long verdict
+    // may take from the nodes, which keep the remainder.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(6),
+            Constraint::Length((verdict.len() as u16 + 2).min(10)),
+        ])
+        .split(frame.area());
+
+    frame.render_widget(
+        Paragraph::new(header_line(snapshot))
+            .block(Block::default().borders(Borders::ALL).title(" atlas ")),
+        rows[0],
+    );
+    frame.render_widget(
+        Paragraph::new(node_body).block(Block::default().borders(Borders::ALL).title(" nodes ")),
+        rows[1],
+    );
     frame.render_widget(
         Paragraph::new(verdict).block(Block::default().borders(Borders::ALL).title(" doctor ")),
         rows[2],
@@ -197,10 +209,16 @@ fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
 
 /// Run until `q` or Escape. Polls on `every`, and repaints between polls so the terminal stays
 /// responsive without asking the nodes anything more often.
+/// `foreign` is what discovery heard from a cluster that is not this one. It is passed in
+/// rather than polled because no node reports it: only the passive listener in `seeds` hears
+/// it, once, before the loop starts. Without it the `foreign-cluster` rule cannot fire here,
+/// and `atlas watch` stayed silent about a neighbour that `atlas doctor` and the drawn view
+/// both name.
 pub async fn run(
     endpoints: Vec<String>,
     cluster: Option<String>,
     every: Duration,
+    foreign: BTreeMap<String, String>,
 ) -> io::Result<()> {
     enable_raw_mode()?;
     let mut out = io::stdout();
@@ -208,6 +226,7 @@ pub async fn run(
     let mut terminal = Terminal::new(ratatui::backend::CrosstermBackend::new(out))?;
 
     let mut snapshot = crate::collect::poll(&endpoints, cluster.clone()).await;
+    snapshot.foreign = foreign.clone();
     let mut findings = crate::doctor::all(&snapshot);
     let mut last = std::time::Instant::now();
 
@@ -227,6 +246,7 @@ pub async fn run(
         }
         if last.elapsed() >= every {
             snapshot = crate::collect::poll(&endpoints, cluster.clone()).await;
+            snapshot.foreign = foreign.clone();
             findings = crate::doctor::all(&snapshot);
             last = std::time::Instant::now();
         }
@@ -242,6 +262,25 @@ pub async fn run(
 mod tests {
     use super::*;
     use crate::model::NodeState;
+    use ratatui::backend::TestBackend;
+
+    /// What the terminal shows, borders and all: the layout sizes each panel, so only the
+    /// drawn buffer says whether a composed line reaches the operator.
+    fn rendered(snapshot: &ClusterSnapshot, findings: &[Finding]) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(96, 24)).expect("test backend");
+        terminal
+            .draw(|f| draw_for_test(f, snapshot, findings))
+            .expect("draw");
+        let buffer = terminal.backend().buffer().clone();
+        (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
     fn node() -> Node {
         Node {
@@ -338,5 +377,74 @@ mod tests {
             .collect();
         assert!(text.contains("degraded"));
         assert!(text.contains("decode"));
+    }
+    /// A clean cluster is told so in words, in the panel and not clipped out of it.
+    #[test]
+    fn an_empty_verdict_is_worded_rather_than_drawn_as_an_empty_box() {
+        let snapshot = ClusterSnapshot {
+            cluster: Some("home".into()),
+            nodes: vec![node()],
+            ..Default::default()
+        };
+        let screen = rendered(&snapshot, &[]);
+        assert!(
+            screen.contains("nothing to report"),
+            "the verdict is composed but never drawn:\n{screen}"
+        );
+    }
+
+    /// A verdict that exists is drawn whole.
+    #[test]
+    fn a_finding_reaches_the_screen() {
+        let snapshot = ClusterSnapshot {
+            cluster: Some("home".into()),
+            nodes: vec![node()],
+            ..Default::default()
+        };
+        let findings = vec![Finding {
+            rule: "version-skew",
+            detail: "0.1.0 and 0.2.0".into(),
+        }];
+        let screen = rendered(&snapshot, &findings);
+        assert!(
+            screen.contains(crate::doctor::title("version-skew")),
+            "{screen}"
+        );
+        assert!(screen.contains("0.1.0 and 0.2.0"), "{screen}");
+    }
+
+    /// A node that reports no device says so.
+    #[test]
+    fn a_node_without_devices_says_so_rather_than_leaving_a_blank() {
+        let mut bare = node();
+        bare.devices = vec![];
+        let text: String = node_lines(&bare)
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.to_string()))
+            .collect();
+        assert!(text.contains("no devices reported"), "{text}");
+    }
+
+    /// A foreign cluster reaches the terminal's verdict: only the passive listener hears one,
+    /// so the loop has to carry what it heard into every snapshot.
+    #[test]
+    fn a_foreign_cluster_reaches_the_verdict() {
+        let mut foreign = BTreeMap::new();
+        foreign.insert("lab".to_string(), "http://192.0.2.9:11435".to_string());
+        let snapshot = ClusterSnapshot {
+            cluster: Some("home".into()),
+            nodes: vec![node()],
+            foreign,
+        };
+        let findings = crate::doctor::all(&snapshot);
+        assert!(
+            findings.iter().any(|f| f.rule == "foreign-cluster"),
+            "the rule fires on the snapshot the loop now builds: {findings:?}"
+        );
+        let screen = rendered(&snapshot, &findings);
+        assert!(
+            screen.contains(crate::doctor::title("foreign-cluster")),
+            "{screen}"
+        );
     }
 }
