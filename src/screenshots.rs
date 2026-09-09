@@ -51,6 +51,8 @@ fn node(endpoint: &str, health: Health) -> Node {
         peers: vec![],
         energy_j: Some(3290.8),
         errors: vec![],
+        measuring: false,
+        layer_times: vec![],
     }
 }
 
@@ -133,6 +135,7 @@ fn cluster_window() {
         .build_eframe(move |cc| {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             Gui {
+                measure: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 shared,
                 endpoints: vec![
                     "http://192.0.2.10:11435".to_string(),

@@ -14,7 +14,9 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use crate::model::{ClusterSnapshot, Device, Health, Node, PeerView, Placement, Segment};
+use crate::model::{
+    ClusterSnapshot, Device, Health, LayerTime, Node, PeerView, Placement, Segment,
+};
 
 /// How long a node may go unanswered before it stops being Online.
 const DEGRADED_AFTER: Duration = Duration::from_secs(5);
@@ -46,6 +48,28 @@ struct EnergyWire {
 struct LoadedWire {
     #[serde(default)]
     models: Vec<LoadedModel>,
+}
+
+#[derive(Deserialize, Default)]
+struct LayerPerfWire {
+    #[serde(default)]
+    measuring: bool,
+    #[serde(default)]
+    layers: Vec<LayerRowWire>,
+}
+
+#[derive(Deserialize)]
+struct LayerRowWire {
+    #[serde(default)]
+    layer_idx: u32,
+    #[serde(default)]
+    device_type: String,
+    #[serde(default)]
+    model_name: String,
+    #[serde(default)]
+    avg_ms_per_token: f64,
+    #[serde(default)]
+    token_count: u64,
 }
 
 #[derive(Deserialize)]
@@ -168,6 +192,8 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
             peers: vec![],
             energy_j: None,
             errors,
+            measuring: false,
+            layer_times: vec![],
         };
     }
 
@@ -189,6 +215,27 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
         Some(d) => (d.devices, d.energy.map(|e| e.total_j)),
         None => (vec![], None),
     };
+
+    // A node predating the endpoint answers an error here; that is a missing panel, not a
+    // node in poor health, so it is read and not counted.
+    let perf: Timed<LayerPerfWire> = get(client, &format!("{base}/api/layer_perf"), short).await;
+    let (measuring, layer_times) = perf
+        .value
+        .map(|p| {
+            let times = p
+                .layers
+                .into_iter()
+                .map(|l| LayerTime {
+                    model: l.model_name,
+                    layer: l.layer_idx,
+                    device: l.device_type.replace("GPU #", "CUDA"),
+                    ms_per_token: l.avg_ms_per_token,
+                    tokens: l.token_count,
+                })
+                .collect();
+            (p.measuring, times)
+        })
+        .unwrap_or_default();
 
     let loaded: Timed<LoadedWire> = get(client, &format!("{base}/api/models/loaded"), short).await;
     let placements = loaded
@@ -240,6 +287,23 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
         peers,
         energy_j,
         errors,
+        measuring,
+        layer_times,
+    }
+}
+
+/// Switch layer-time measurement on or off on every node named. Measurement costs the
+/// nodes a device synchronisation per stage, so it is switched on only while someone is
+/// looking and off again when they leave.
+pub async fn set_measuring(endpoints: &[String], on: bool) {
+    let client = reqwest::Client::new();
+    let flag = if on { "1" } else { "0" };
+    for endpoint in endpoints {
+        let url = format!(
+            "{}/api/layer_perf?enable={flag}",
+            endpoint.trim_end_matches('/')
+        );
+        let _ = client.get(url).timeout(Duration::from_secs(2)).send().await;
     }
 }
 

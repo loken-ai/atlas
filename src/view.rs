@@ -187,11 +187,7 @@ fn node_card(ui: &mut egui::Ui, node: &Node) {
             });
         }
         for placement in &node.placements {
-            ui.label(
-                RichText::new(placement.headline())
-                    .size(11.0)
-                    .color(TEXT),
-            );
+            ui.label(RichText::new(placement.headline()).size(11.0).color(TEXT));
             for segment in &placement.segments {
                 ui.label(
                     RichText::new(format!(
@@ -207,8 +203,37 @@ fn node_card(ui: &mut egui::Ui, node: &Node) {
                 );
             }
         }
+        for (model, layers) in node.layer_times_by_model() {
+            ui.label(
+                RichText::new(format!("{model}: ms to issue each layer, per token"))
+                    .size(11.0)
+                    .color(TEXT),
+            );
+            for row in layers.chunks(LAYER_CELLS_PER_ROW) {
+                let cells: Vec<String> = row
+                    .iter()
+                    .map(|t| format!("L{:02} {:<5} {:>7.3}", t.layer, t.device, t.ms_per_token))
+                    .collect();
+                ui.label(
+                    RichText::new(format!("    {}", cells.join("   ")))
+                        .size(10.0)
+                        .monospace()
+                        .color(MUTED),
+                );
+            }
+        }
+        if node.measuring && node.layer_times.iter().all(|t| t.tokens == 0) {
+            ui.label(
+                RichText::new("measuring layer time: nothing decoded yet")
+                    .size(10.0)
+                    .color(MUTED),
+            );
+        }
     });
 }
+
+/// How many layer cells share one row of the card.
+const LAYER_CELLS_PER_ROW: usize = 6;
 
 /// What doctor found, or that it found nothing.
 ///
@@ -357,6 +382,8 @@ mod tests {
                 peers: vec![],
                 energy_j: None,
                 errors,
+                measuring: false,
+                layer_times: vec![],
             };
             let mut harness = egui_kittest::Harness::new_ui(move |ui| node_card(ui, &node));
             harness.run();

@@ -139,8 +139,32 @@ fn node_lines(node: &Node) -> Vec<Line<'static>> {
             Style::default().fg(Color::Red),
         ));
     }
+    for (model, layers) in node.layer_times_by_model() {
+        out.push(Line::styled(
+            format!("    {model}: ms to issue each layer, per token"),
+            Style::default().fg(Color::Cyan),
+        ));
+        for row in layers.chunks(LAYER_CELLS_PER_LINE) {
+            let cells: Vec<String> = row.iter().map(|t| layer_cell(t)).collect();
+            out.push(Line::raw(format!("        {}", cells.join("  "))));
+        }
+    }
+    if node.measuring && node.layer_times.iter().all(|t| t.tokens == 0) {
+        out.push(Line::styled(
+            "    measuring layer time: nothing decoded yet",
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
     out.push(Line::raw(""));
     out
+}
+
+/// How many layer cells share one line: a stack of forty layers is seven lines, not forty.
+const LAYER_CELLS_PER_LINE: usize = 6;
+
+/// One layer as a fixed-width cell, so the columns line up across the lines.
+fn layer_cell(t: &crate::model::LayerTime) -> String {
+    format!("L{:02} {:<5} {:>7.3}", t.layer, t.device, t.ms_per_token)
 }
 
 /// The same drawing the loop calls, reachable from a test so the documentation image comes from
@@ -198,7 +222,11 @@ fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
         rows[0],
     );
     frame.render_widget(
-        Paragraph::new(node_body).block(Block::default().borders(Borders::ALL).title(" nodes ")),
+        Paragraph::new(node_body).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" nodes   q quit  r refresh  m layer time "),
+        ),
         rows[1],
     );
     frame.render_widget(
@@ -229,6 +257,8 @@ pub async fn run(
     snapshot.foreign = foreign.clone();
     let mut findings = crate::doctor::all(&snapshot);
     let mut last = std::time::Instant::now();
+    // Whether this view switched measurement on; what it switched on, it switches off.
+    let mut measuring = false;
 
     let result = loop {
         if let Err(e) = terminal.draw(|f| draw(f, &snapshot, &findings)) {
@@ -242,6 +272,11 @@ pub async fn run(
                 if matches!(key.code, KeyCode::Char('r')) {
                     last = std::time::Instant::now() - every;
                 }
+                if matches!(key.code, KeyCode::Char('m')) {
+                    measuring = !measuring;
+                    crate::collect::set_measuring(&endpoints, measuring).await;
+                    last = std::time::Instant::now() - every;
+                }
             }
         }
         if last.elapsed() >= every {
@@ -252,6 +287,9 @@ pub async fn run(
         }
     };
 
+    if measuring {
+        crate::collect::set_measuring(&endpoints, false).await;
+    }
     disable_raw_mode()?;
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -299,6 +337,8 @@ mod tests {
             peers: vec![],
             energy_j: Some(10.0),
             errors: vec![],
+            measuring: false,
+            layer_times: vec![],
         }
     }
 
@@ -501,5 +541,64 @@ mod headline_tests {
             segments: vec![],
         };
         assert_eq!(old_node.headline(), "kyutai-default - loaded");
+    }
+}
+
+#[cfg(test)]
+mod layer_time_tests {
+    use crate::model::{Health, LayerTime, Node};
+
+    fn measured() -> Node {
+        let at = |layer: u32, device: &str, ms: f64, tokens: u64| LayerTime {
+            model: "qwen3:8b".into(),
+            layer,
+            device: device.into(),
+            ms_per_token: ms,
+            tokens,
+        };
+        Node {
+            endpoint: "http://192.0.2.10:11435".into(),
+            health: Health::Online,
+            rtt_ms: Some(1.0),
+            version: Some("0.1.0".into()),
+            uptime_s: Some(10.0),
+            state: None,
+            devices: vec![],
+            placements: vec![],
+            peers: vec![],
+            energy_j: None,
+            errors: vec![],
+            measuring: true,
+            layer_times: vec![
+                at(1, "CPU", 4.5, 12),
+                at(0, "CUDA0", 0.041, 12),
+                at(2, "CUDA0", 0.0, 0),
+            ],
+        }
+    }
+
+    fn text(node: &Node) -> String {
+        super::node_lines(node)
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn measured_layers_are_listed_in_order_and_unmeasured_ones_are_not() {
+        let text = text(&measured());
+        assert!(text.contains("qwen3:8b: ms to issue each layer, per token"));
+        assert!(text.contains("L00 CUDA0   0.041  L01 CPU     4.500"));
+        assert!(!text.contains("L02"));
+    }
+
+    #[test]
+    fn a_node_measuring_with_nothing_decoded_says_so() {
+        let mut node = measured();
+        node.layer_times.iter_mut().for_each(|t| t.tokens = 0);
+        assert!(text(&node).contains("measuring layer time: nothing decoded yet"));
+        node.measuring = false;
+        assert!(!text(&node).contains("measuring"));
     }
 }

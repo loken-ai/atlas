@@ -36,6 +36,15 @@ A bare `host:port` is taken as `http://`, and both binaries listen for announcem
 deciding they have no node to watch. The same daemon reached at two addresses, `localhost` and
 the one it advertises, is one node: nodes are told apart by the id they give themselves.
 
+## Where a step's time goes
+
+Press `m` in the terminal view, or tick "Layer time" in the window, and every node starts
+measuring what issuing each layer of its resident model costs per token. The rows appear
+under the model's placement, one cell per layer with its device, so a stack whose tail sits
+on the host reads as such: a layer on a card returns as soon as its work is queued, a layer
+on the host returns when it is done. Measurement costs the nodes a device synchronisation
+per stage, so it is off until asked for and switched off again when the view closes.
+
 ## What doctor reports
 
 | Finding | What it means |

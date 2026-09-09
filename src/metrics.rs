@@ -162,6 +162,8 @@ mod tests {
             peers: vec![],
             energy_j: energy,
             errors: vec![],
+            measuring: false,
+            layer_times: vec![],
         }
     }
 

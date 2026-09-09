@@ -86,6 +86,9 @@ fn main() -> eframe::Result<()> {
                 let ctx = cc.egui_ctx.clone();
                 let shared_for_task = shared.clone();
                 let refresh_for_task = refresh_now.clone();
+                let measure = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let measure_for_task = measure.clone();
+                let mut measuring = false;
                 let cluster = cluster.clone();
                 let foreign = foreign.clone();
                 // Its own thread and runtime: the window must never wait on a node.
@@ -96,6 +99,13 @@ fn main() -> eframe::Result<()> {
                         .expect("runtime");
                     rt.block_on(async move {
                         loop {
+                            let wanted =
+                                measure_for_task.load(std::sync::atomic::Ordering::Relaxed);
+                            if wanted != measuring {
+                                atlas_core::collect::set_measuring(&endpoints_for_task, wanted)
+                                    .await;
+                                measuring = wanted;
+                            }
                             let mut snapshot =
                                 atlas_core::collect::poll(&endpoints_for_task, cluster.clone())
                                     .await;
@@ -128,6 +138,7 @@ fn main() -> eframe::Result<()> {
                     endpoints,
                     every,
                     refresh_now,
+                    measure,
                 }))
             }
         }),

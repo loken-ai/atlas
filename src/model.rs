@@ -222,6 +222,42 @@ pub struct Node {
     /// these is partial and has to say so.
     pub energy_j: Option<f64>,
     pub errors: Vec<String>,
+    /// Whether the node is measuring where a decode step's time goes. Off by default on
+    /// every node, since the measurement synchronises with the device.
+    pub measuring: bool,
+    /// What issuing each layer of a resident model costs per token, while measuring.
+    pub layer_times: Vec<LayerTime>,
+}
+
+/// One layer's measured cost on one node.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerTime {
+    pub model: String,
+    pub layer: u32,
+    /// "CUDA0", "CPU": the device the layer sits on, as the node names it.
+    pub device: String,
+    /// Milliseconds the calling thread spends issuing the layer, per token. A layer on a
+    /// card returns as soon as its work is queued; one on the host returns when it is done.
+    pub ms_per_token: f64,
+    pub tokens: u64,
+}
+
+impl Node {
+    /// The measured layers by model, in layer order, only those a token has been through:
+    /// a layer with nothing recorded is not a layer that costs nothing.
+    pub fn layer_times_by_model(&self) -> Vec<(String, Vec<&LayerTime>)> {
+        let mut groups: Vec<(String, Vec<&LayerTime>)> = Vec::new();
+        for t in self.layer_times.iter().filter(|t| t.tokens > 0) {
+            match groups.iter_mut().find(|(m, _)| *m == t.model) {
+                Some((_, v)) => v.push(t),
+                None => groups.push((t.model.clone(), vec![t])),
+            }
+        }
+        for (_, v) in &mut groups {
+            v.sort_by_key(|t| t.layer);
+        }
+        groups
+    }
 }
 
 /// One poll of the whole cluster.
@@ -294,6 +330,8 @@ mod tests {
             peers: vec![],
             energy_j: e,
             errors: vec![],
+            measuring: false,
+            layer_times: vec![],
         };
         let snap = ClusterSnapshot {
             nodes: vec![node(Some(10.0)), node(None)],

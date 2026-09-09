@@ -35,6 +35,9 @@ pub struct Gui {
     pub every: Duration,
     /// Set by the Refresh button and cleared by the polling task.
     pub refresh_now: Arc<AtomicBool>,
+    /// Whether the nodes should measure where a decode step's time goes. The poll thread
+    /// carries a change to every node; the window switches it off when it closes.
+    pub measure: Arc<AtomicBool>,
 }
 
 /// A reading that has aged is not the same as a reading. The window says how old it is rather
@@ -54,6 +57,20 @@ pub fn age(polled_at: Option<Instant>) -> String {
 }
 
 impl eframe::App for Gui {
+    /// What the window switched on, it switches off: a node left measuring after the
+    /// observer has gone pays the synchronisation for nobody.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        if self.measure.swap(false, Ordering::Relaxed) {
+            let endpoints = self.endpoints.clone();
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                rt.block_on(crate::collect::set_measuring(&endpoints, false));
+            }
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let (snapshot, findings, polled_at, note) = {
             let shared = self.shared.lock().expect("shared state");
@@ -106,6 +123,19 @@ impl eframe::App for Gui {
                         {
                             self.refresh_now.store(true, Ordering::Relaxed);
                         }
+                        let mut measure = self.measure.load(Ordering::Relaxed);
+                        if ui
+                            .checkbox(&mut measure, egui::RichText::new("Layer time").size(11.0))
+                            .on_hover_text(
+                                "Ask every node where a decode step's time goes, layer by \
+                                 layer. Costs the nodes a device synchronisation per stage \
+                                 while it is on.",
+                            )
+                            .changed()
+                        {
+                            self.measure.store(measure, Ordering::Relaxed);
+                            self.refresh_now.store(true, Ordering::Relaxed);
+                        }
                     });
                 });
             });
@@ -155,6 +185,7 @@ mod tests {
                 endpoints: vec!["http://192.0.2.10:11435".to_string()],
                 every: Duration::from_secs(5),
                 refresh_now: Arc::new(AtomicBool::new(false)),
+                measure: Arc::new(AtomicBool::new(false)),
             });
         harness.run_steps(3);
         harness
