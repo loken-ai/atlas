@@ -135,10 +135,27 @@ impl Device {
 pub struct Placement {
     #[serde(default)]
     pub model_id: String,
+    /// What the node says of the entry: "loaded", or the render it runs.
+    #[serde(default)]
+    pub status: String,
     #[serde(default)]
     pub total_layers: u32,
     #[serde(default)]
     pub segments: Vec<Segment>,
+}
+
+impl Placement {
+    /// The line that names the entry: its layer count when it is placed, and what the
+    /// node says of it when that is more than "loaded", which is how a render in
+    /// progress describes itself (its phase and step follow the layer count).
+    pub fn headline(&self) -> String {
+        let told = !self.status.is_empty() && self.status != "loaded";
+        match (self.total_layers, told) {
+            (0, true) => format!("{} - {}", self.model_id, self.status),
+            (n, true) => format!("{} - {} layers - {}", self.model_id, n, self.status),
+            (n, false) => format!("{} - {} layers", self.model_id, n),
+        }
+    }
 }
 
 /// A run of layers on one device. `last` is INCLUSIVE, which is where an off-by-one once lost

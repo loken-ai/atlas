@@ -116,7 +116,7 @@ fn node_lines(node: &Node) -> Vec<Line<'static>> {
     }
     for p in &node.placements {
         out.push(Line::styled(
-            format!("    {} - {} layers", p.model_id, p.total_layers),
+            format!("    {}", p.headline()),
             Style::default().fg(Color::Cyan),
         ));
         for s in &p.segments {
@@ -348,6 +348,7 @@ mod tests {
         let mut n = node();
         n.placements = vec![crate::model::Placement {
             model_id: "qwen3:0.6b".into(),
+            status: "loaded".into(),
             total_layers: 28,
             segments: vec![crate::model::Segment {
                 device_type: "CUDA".into(),
@@ -446,5 +447,45 @@ mod tests {
             screen.contains(crate::doctor::title("foreign-cluster")),
             "{screen}"
         );
+    }
+}
+
+#[cfg(test)]
+mod headline_tests {
+    use crate::model::Placement;
+
+    #[test]
+    fn a_render_in_progress_shows_its_status_rather_than_zero_layers() {
+        let rendering = Placement {
+            model_id: "ace-step".into(),
+            status: "rendering sound".into(),
+            total_layers: 0,
+            segments: vec![],
+        };
+        assert_eq!(rendering.headline(), "ace-step - rendering sound");
+        let part = Placement {
+            model_id: "ace-step (lm)".into(),
+            status: "rendering sound: codes 12/300".into(),
+            total_layers: 36,
+            segments: vec![],
+        };
+        assert_eq!(
+            part.headline(),
+            "ace-step (lm) - 36 layers - rendering sound: codes 12/300"
+        );
+        let placed = Placement {
+            model_id: "qwen3:8b".into(),
+            status: "loaded".into(),
+            total_layers: 36,
+            segments: vec![],
+        };
+        assert_eq!(placed.headline(), "qwen3:8b - 36 layers");
+        let old_node = Placement {
+            model_id: "kyutai-default".into(),
+            status: String::new(),
+            total_layers: 0,
+            segments: vec![],
+        };
+        assert_eq!(old_node.headline(), "kyutai-default - 0 layers");
     }
 }

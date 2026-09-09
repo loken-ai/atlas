@@ -188,12 +188,9 @@ fn node_card(ui: &mut egui::Ui, node: &Node) {
         }
         for placement in &node.placements {
             ui.label(
-                RichText::new(format!(
-                    "{} - {} layers",
-                    placement.model_id, placement.total_layers
-                ))
-                .size(11.0)
-                .color(TEXT),
+                RichText::new(placement.headline())
+                    .size(11.0)
+                    .color(TEXT),
             );
             for segment in &placement.segments {
                 ui.label(
