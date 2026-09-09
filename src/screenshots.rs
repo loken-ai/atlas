@@ -96,6 +96,18 @@ fn cluster() -> ClusterSnapshot {
             },
         ],
     }];
+    // Measured, and measured across two cards: the point of the panel is that the second
+    // card's layers cost what they cost, and a spilled tail would read as such.
+    desktop.measuring = true;
+    desktop.layer_times = (0..36)
+        .map(|layer| crate::model::LayerTime {
+            model: "qwen3:8b".into(),
+            layer,
+            device: if layer < 24 { "CUDA0" } else { "CUDA1" }.into(),
+            ms_per_token: if layer < 24 { 0.094 } else { 0.128 },
+            tokens: 212,
+        })
+        .collect();
 
     let mut laptop = node("http://192.0.2.11:11435", Health::Offline);
     laptop.state = None;

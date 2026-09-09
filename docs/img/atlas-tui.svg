@@ -3,7 +3,7 @@
 <text x="0.0" y="13.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┌ atlas ───────────────────────────────────────────────────────────────────────────────────────┐</text>
 <text x="0.0" y="30.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│home  1 of 2 online  3291 J (partial)                                                         │</text>
 <text x="0.0" y="47.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└──────────────────────────────────────────────────────────────────────────────────────────────┘</text>
-<text x="0.0" y="64.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┌ nodes ───────────────────────────────────────────────────────────────────────────────────────┐</text>
+<text x="0.0" y="64.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┌ nodes   q quit  r refresh  m layer time ─────────────────────────────────────────────────────┐</text>
 <text x="0.0" y="81.0" fill="#e6edf3" textLength="260.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│http://192.0.2.10:11435       </text>
 <text x="260.4" y="81.0" fill="#3fb950" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">online    </text>
 <text x="344.4" y="81.0" fill="#e6edf3" textLength="462.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">     3ms  0.1.0                                       │</text>
@@ -22,19 +22,15 @@
 <text x="0.0" y="200.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
 <text x="8.4" y="200.0" fill="#8b949e" textLength="277.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">        CUDA:1 L24-35 (12 layers)</text>
 <text x="285.6" y="200.0" fill="#e6edf3" textLength="520.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                                                             │</text>
-<text x="0.0" y="217.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
-<text x="0.0" y="234.0" fill="#e6edf3" textLength="260.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│http://192.0.2.11:11435       </text>
-<text x="260.4" y="234.0" fill="#f85149" textLength="84.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">offline   </text>
-<text x="344.4" y="234.0" fill="#e6edf3" textLength="462.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">   228ms  -                                           │</text>
-<text x="0.0" y="251.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8.4" y="251.0" fill="#8b949e" textLength="193.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    no devices reported</text>
-<text x="201.6" y="251.0" fill="#e6edf3" textLength="604.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                                                                       │</text>
-<text x="0.0" y="268.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
-<text x="8.4" y="268.0" fill="#f85149" textLength="285.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    /health: error sending request</text>
-<text x="294.0" y="268.0" fill="#e6edf3" textLength="512.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                                                            │</text>
-<text x="0.0" y="285.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
-<text x="0.0" y="302.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
-<text x="0.0" y="319.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│                                                                                              │</text>
+<text x="0.0" y="217.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
+<text x="8.4" y="217.0" fill="#39c5cf" textLength="394.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">    qwen3:8b: ms to issue each layer, per token</text>
+<text x="403.2" y="217.0" fill="#e6edf3" textLength="403.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">                                               │</text>
+<text x="0.0" y="234.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│        L00 CUDA0   0.094  L01 CUDA0   0.094  L02 CUDA0   0.094  L03 CUDA0   0.094  L04 CUDA0 │</text>
+<text x="0.0" y="251.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│        L06 CUDA0   0.094  L07 CUDA0   0.094  L08 CUDA0   0.094  L09 CUDA0   0.094  L10 CUDA0 │</text>
+<text x="0.0" y="268.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│        L12 CUDA0   0.094  L13 CUDA0   0.094  L14 CUDA0   0.094  L15 CUDA0   0.094  L16 CUDA0 │</text>
+<text x="0.0" y="285.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│        L18 CUDA0   0.094  L19 CUDA0   0.094  L20 CUDA0   0.094  L21 CUDA0   0.094  L22 CUDA0 │</text>
+<text x="0.0" y="302.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│        L24 CUDA1   0.128  L25 CUDA1   0.128  L26 CUDA1   0.128  L27 CUDA1   0.128  L28 CUDA1 │</text>
+<text x="0.0" y="319.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│        L30 CUDA1   0.128  L31 CUDA1   0.128  L32 CUDA1   0.128  L33 CUDA1   0.128  L34 CUDA1 │</text>
 <text x="0.0" y="336.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">└──────────────────────────────────────────────────────────────────────────────────────────────┘</text>
 <text x="0.0" y="353.0" fill="#e6edf3" textLength="806.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">┌ doctor ──────────────────────────────────────────────────────────────────────────────────────┐</text>
 <text x="0.0" y="370.0" fill="#e6edf3" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">│</text>
