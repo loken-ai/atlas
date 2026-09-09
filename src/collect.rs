@@ -55,6 +55,9 @@ struct LoadedModel {
     /// "loaded", or what a render says of itself, such as "rendering sound".
     #[serde(default)]
     status: String,
+    /// The device the node names for the entry, for a model that reports no layers.
+    #[serde(default)]
+    device: Option<String>,
     #[serde(default, alias = "num_layers")]
     total_layers: u32,
     #[serde(default)]
@@ -196,6 +199,7 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
                 .map(|m| Placement {
                     model_id: m.model_id,
                     status: m.status,
+                    device: m.device,
                     total_layers: m.total_layers,
                     segments: m
                         .layer_distribution

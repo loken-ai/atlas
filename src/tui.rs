@@ -349,6 +349,7 @@ mod tests {
         n.placements = vec![crate::model::Placement {
             model_id: "qwen3:0.6b".into(),
             status: "loaded".into(),
+            device: None,
             total_layers: 28,
             segments: vec![crate::model::Segment {
                 device_type: "CUDA".into(),
@@ -459,6 +460,7 @@ mod headline_tests {
         let rendering = Placement {
             model_id: "ace-step".into(),
             status: "rendering sound".into(),
+            device: None,
             total_layers: 0,
             segments: vec![],
         };
@@ -466,6 +468,7 @@ mod headline_tests {
         let part = Placement {
             model_id: "ace-step (lm)".into(),
             status: "rendering sound: codes 12/300".into(),
+            device: Some("CUDA".into()),
             total_layers: 36,
             segments: vec![],
         };
@@ -476,16 +479,27 @@ mod headline_tests {
         let placed = Placement {
             model_id: "qwen3:8b".into(),
             status: "loaded".into(),
+            device: Some("CUDA".into()),
             total_layers: 36,
             segments: vec![],
         };
         assert_eq!(placed.headline(), "qwen3:8b - 36 layers");
-        let old_node = Placement {
+        // A node that names a device and no layers is not claiming zero of them.
+        let whole = Placement {
             model_id: "kyutai-default".into(),
-            status: String::new(),
+            status: "loaded".into(),
+            device: Some("CUDA".into()),
             total_layers: 0,
             segments: vec![],
         };
-        assert_eq!(old_node.headline(), "kyutai-default - 0 layers");
+        assert_eq!(whole.headline(), "kyutai-default - loaded on CUDA");
+        let old_node = Placement {
+            model_id: "kyutai-default".into(),
+            status: String::new(),
+            device: None,
+            total_layers: 0,
+            segments: vec![],
+        };
+        assert_eq!(old_node.headline(), "kyutai-default - loaded");
     }
 }

@@ -138,6 +138,9 @@ pub struct Placement {
     /// What the node says of the entry: "loaded", or the render it runs.
     #[serde(default)]
     pub status: String,
+    /// The device the node names for the entry, when it reports no layers.
+    #[serde(default)]
+    pub device: Option<String>,
     #[serde(default)]
     pub total_layers: u32,
     #[serde(default)]
@@ -150,10 +153,13 @@ impl Placement {
     /// progress describes itself (its phase and step follow the layer count).
     pub fn headline(&self) -> String {
         let told = !self.status.is_empty() && self.status != "loaded";
-        match (self.total_layers, told) {
-            (0, true) => format!("{} - {}", self.model_id, self.status),
-            (n, true) => format!("{} - {} layers - {}", self.model_id, n, self.status),
-            (n, false) => format!("{} - {} layers", self.model_id, n),
+        match (self.total_layers, told, self.device.as_deref()) {
+            (0, true, _) => format!("{} - {}", self.model_id, self.status),
+            // A node that gave no layer count is not claiming zero of them.
+            (0, false, Some(device)) => format!("{} - loaded on {}", self.model_id, device),
+            (0, false, None) => format!("{} - loaded", self.model_id),
+            (n, true, _) => format!("{} - {} layers - {}", self.model_id, n, self.status),
+            (n, false, _) => format!("{} - {} layers", self.model_id, n),
         }
     }
 }

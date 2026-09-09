@@ -75,6 +75,7 @@ fn cluster() -> ClusterSnapshot {
     desktop.placements = vec![Placement {
         model_id: "qwen3:8b".into(),
         status: "loaded".into(),
+        device: Some("CUDA".into()),
         total_layers: 36,
         segments: vec![
             Segment {
