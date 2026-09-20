@@ -82,17 +82,30 @@ pub fn device_line(d: &Device) -> String {
 }
 
 fn node_lines(node: &Node) -> Vec<Line<'static>> {
+    // Name the node the way its operator does - "desktop", "laptop" - not by the URL a reader
+    // has to decode. The endpoint follows, dimmed, for whoever needs to reach it. A node that
+    // never gave an id falls back to its endpoint as the name.
+    let name = node
+        .state
+        .as_ref()
+        .map(|s| s.node_id.as_str())
+        .filter(|id| !id.is_empty())
+        .unwrap_or(node.endpoint.as_str());
     let mut out = vec![Line::from(vec![
         Span::styled(
-            format!("{:<30}", node.endpoint),
+            format!("{name:<16}"),
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("{:<10}", health_word(node.health)),
+            format!("{:<30}", node.endpoint),
+            Style::default().fg(Color::DarkGray),
+        ),
+        Span::styled(
+            format!("{:<9}", health_word(node.health)),
             health_style(node.health),
         ),
         Span::raw(format!(
-            "{:>8}  {}",
+            "{:>7}  {}",
             node.rtt_ms.map_or("-".into(), |v| format!("{v:.0}ms")),
             node.version.as_deref().unwrap_or("-")
         )),
