@@ -116,6 +116,33 @@ fn node_lines(node: &Node) -> Vec<Line<'static>> {
             Style::default().fg(Color::DarkGray),
         ));
     }
+    // What a busy node is actually running: the in-flight requests grouped by model and state,
+    // so the model loading or answering is named rather than hidden behind a count.
+    if !node.in_flight.is_empty() {
+        let mut by: std::collections::BTreeMap<(String, String), usize> =
+            std::collections::BTreeMap::new();
+        for r in &node.in_flight {
+            let model = if r.model.is_empty() {
+                "unknown".to_string()
+            } else {
+                r.model.clone()
+            };
+            let state = if r.state.is_empty() {
+                "running".to_string()
+            } else {
+                r.state.clone()
+            };
+            *by.entry((state, model)).or_default() += 1;
+        }
+        for ((state, model), n) in by {
+            let line = if n > 1 {
+                format!("    {state} {model} (x{n})")
+            } else {
+                format!("    {state} {model}")
+            };
+            out.push(Line::styled(line, Style::default().fg(Color::Cyan)));
+        }
+    }
     // A node with no device says so; a block that stops after its header reads as a node
     // with nothing wrong.
     if node.devices.is_empty() {
@@ -347,6 +374,7 @@ mod tests {
             }),
             devices: vec![],
             placements: vec![],
+            in_flight: vec![],
             peers: vec![],
             energy_j: Some(10.0),
             errors: vec![],
@@ -578,6 +606,7 @@ mod layer_time_tests {
             state: None,
             devices: vec![],
             placements: vec![],
+            in_flight: vec![],
             peers: vec![],
             energy_j: None,
             errors: vec![],

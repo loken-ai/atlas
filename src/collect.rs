@@ -50,6 +50,13 @@ struct LoadedWire {
     models: Vec<LoadedModel>,
 }
 
+/// `/api/inflight`: the requests being served right now, each naming its model and state.
+#[derive(Deserialize, Default)]
+struct InflightWire {
+    #[serde(default)]
+    requests: Vec<crate::model::InFlight>,
+}
+
 #[derive(Deserialize, Default)]
 struct LayerPerfWire {
     #[serde(default)]
@@ -189,6 +196,7 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
             state: None,
             devices: vec![],
             placements: vec![],
+            in_flight: vec![],
             peers: vec![],
             energy_j: None,
             errors,
@@ -267,6 +275,9 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
         })
         .unwrap_or_default();
 
+    let inflight: Timed<InflightWire> = get(client, &format!("{base}/api/inflight"), short).await;
+    let in_flight = inflight.value.map(|w| w.requests).unwrap_or_default();
+
     // Answering, but not everything, is Degraded rather than Online: a node whose device
     // endpoint fails is not a node in good health, and calling it Online hides that.
     let health = if errors.is_empty() && health.elapsed < DEGRADED_AFTER {
@@ -284,6 +295,7 @@ pub async fn poll_node(client: &reqwest::Client, endpoint: &str) -> Node {
         state: state.value,
         devices: device_list,
         placements,
+        in_flight,
         peers,
         energy_j,
         errors,

@@ -379,6 +379,7 @@ mod tests {
                 state: None,
                 devices: vec![],
                 placements: vec![],
+                in_flight: vec![],
                 peers: vec![],
                 energy_j: None,
                 errors,

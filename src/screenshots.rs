@@ -48,6 +48,7 @@ fn node(endpoint: &str, health: Health) -> Node {
         }),
         devices: vec![],
         placements: vec![],
+        in_flight: vec![],
         peers: vec![],
         energy_j: Some(3290.8),
         errors: vec![],

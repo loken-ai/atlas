@@ -215,6 +215,9 @@ pub struct Node {
     pub devices: Vec<Device>,
     /// Where each resident model's layers sit.
     pub placements: Vec<Placement>,
+    /// The requests in flight right now, each naming the model it runs and its state -
+    /// what a bare "busy" count cannot say. The model loading or answering is here.
+    pub in_flight: Vec<InFlight>,
     /// What this node believes about the others. Empty when the build predates
     /// `/api/cluster/peers`, which is why an asymmetric partition is invisible without it.
     pub peers: Vec<PeerView>,
@@ -227,6 +230,15 @@ pub struct Node {
     pub measuring: bool,
     /// What issuing each layer of a resident model costs per token, while measuring.
     pub layer_times: Vec<LayerTime>,
+}
+
+/// One request in flight on a node: the model it runs and whether it is running or queued.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InFlight {
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub state: String,
 }
 
 /// One layer's measured cost on one node.
@@ -327,6 +339,7 @@ mod tests {
             state: None,
             devices: vec![],
             placements: vec![],
+            in_flight: vec![],
             peers: vec![],
             energy_j: e,
             errors: vec![],

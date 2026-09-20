@@ -159,6 +159,7 @@ mod tests {
             }),
             devices: vec![],
             placements: vec![],
+            in_flight: vec![],
             peers: vec![],
             energy_j: energy,
             errors: vec![],
