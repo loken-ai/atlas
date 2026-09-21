@@ -255,6 +255,27 @@ pub struct LayerTime {
 }
 
 impl Node {
+    /// A seed not yet reached: drawn from the first frame so the window is the cluster at once,
+    /// rather than a blank wait for the first poll of a slow or unreachable node to return.
+    pub fn unreached(endpoint: &str) -> Node {
+        Node {
+            endpoint: endpoint.to_string(),
+            health: Health::Unknown,
+            rtt_ms: None,
+            version: None,
+            uptime_s: None,
+            state: None,
+            devices: vec![],
+            placements: vec![],
+            in_flight: vec![],
+            peers: vec![],
+            energy_j: None,
+            errors: vec![],
+            measuring: false,
+            layer_times: vec![],
+        }
+    }
+
     /// The measured layers by model, in layer order, only those a token has been through:
     /// a layer with nothing recorded is not a layer that costs nothing.
     pub fn layer_times_by_model(&self) -> Vec<(String, Vec<&LayerTime>)> {

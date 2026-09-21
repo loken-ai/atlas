@@ -68,7 +68,7 @@ pub fn header_line(snapshot: &ClusterSnapshot) -> String {
 /// One line per device. Returned rather than drawn so it can be tested.
 pub fn device_line(d: &Device) -> String {
     format!(
-        "{}:{} {:<26} {:>9}/{:<5.1} GB  {:>5}  {:>6}",
+        "{}:{} {:<26} {:>9}/{:<5.1} GB  {:>5}  {:>5}  {:>6}",
         d.device_type,
         d.device_id,
         d.name,
@@ -76,6 +76,10 @@ pub fn device_line(d: &Device) -> String {
         d.used_bytes()
             .map_or("-".into(), |u| format!("{:.1}", u as f64 / GB)),
         d.memory_bytes as f64 / GB,
+        // Compute load on the device. A card holding weights but sitting near zero here is the
+        // sign that decode is running off it, which a memory bar alone cannot show. Absent on
+        // the CPU row, which the server does not measure, so it reads as a dash there.
+        or_dash(d.utilization_gpu_percent, "%"),
         or_dash(d.temperature_c, "C"),
         or_dash(d.power_watts, "W"),
     )
@@ -115,6 +119,20 @@ fn node_lines(node: &Node) -> Vec<Line<'static>> {
             format!("    {} in flight, {} lane(s)", state.busy, state.lanes),
             Style::default().fg(Color::DarkGray),
         ));
+        // Throughput the node has measured. Zero is never-measured, not zero speed, so an
+        // unmeasured rate is a dash. Prefill and decode differ by an order of magnitude on a
+        // streamed model, so they are named apart rather than summed.
+        let rate = |v: f64| if v > 0.0 { format!("{v:.1}") } else { "-".to_string() };
+        if state.decode_tok_per_s > 0.0 || state.prefill_tok_per_s > 0.0 {
+            out.push(Line::styled(
+                format!(
+                    "    {} tok/s decode, {} tok/s prefill",
+                    rate(state.decode_tok_per_s),
+                    rate(state.prefill_tok_per_s)
+                ),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
     }
     // What a busy node is actually running: the in-flight requests grouped by model and state,
     // so the model loading or answering is named rather than hidden behind a count.
@@ -160,14 +178,23 @@ fn node_lines(node: &Node) -> Vec<Line<'static>> {
             Style::default().fg(Color::Cyan),
         ));
         for s in &p.segments {
+            // The bytes a device holds. On a streamed model every entry spans all layers and
+            // only the bytes tell the cards apart from each other; on a layer-split model they
+            // confirm where the weight went. Absent (zero) stays off the line.
+            let mem = if s.memory_bytes > 0 {
+                format!("  {:.1} GB", s.memory_bytes as f64 / GB)
+            } else {
+                String::new()
+            };
             out.push(Line::styled(
                 format!(
-                    "        {}:{} L{}-{} ({} layers)",
+                    "        {}:{} L{}-{} ({} layers){}",
                     s.device_type,
                     s.device_id,
                     s.first,
                     s.last,
-                    s.layers()
+                    s.layers(),
+                    mem
                 ),
                 Style::default().fg(Color::DarkGray),
             ));
@@ -275,60 +302,117 @@ fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
     );
 }
 
-/// Run until `q` or Escape. Polls on `every`, and repaints between polls so the terminal stays
-/// responsive without asking the nodes anything more often.
-/// `foreign` is what discovery heard from a cluster that is not this one. It is passed in
-/// rather than polled because no node reports it: only the passive listener in `seeds` hears
-/// it, once, before the loop starts. Without it the `foreign-cluster` rule cannot fire here,
-/// and `atlas watch` stayed silent about a neighbour that `atlas doctor` and the drawn view
-/// both name.
+/// What the draw loop asks of the background poller.
+enum Cmd {
+    Refresh,
+    Measure(bool),
+}
+
+/// Run until `q` or Escape. The window paints from the first frame with the seeds drawn as
+/// nodes not yet reached, and a background task discovers, polls, and sends snapshots, so
+/// neither a node's latency nor the discovery window ever holds the screen. Discovery listens
+/// once, off the first paint, because listening blocks for its window and a node on this host
+/// holding the port must not hold the terminal. What it hears rides in every snapshot's
+/// `foreign`, since no node reports a neighbouring cluster and the `foreign-cluster` rule needs
+/// it here as much as `doctor` does.
 pub async fn run(
-    endpoints: Vec<String>,
+    seeds: Vec<String>,
     cluster: Option<String>,
     every: Duration,
-    foreign: BTreeMap<String, String>,
+    discover: bool,
 ) -> io::Result<()> {
     enable_raw_mode()?;
     let mut out = io::stdout();
     crossterm::execute!(out, EnterAlternateScreen)?;
     let mut terminal = Terminal::new(ratatui::backend::CrosstermBackend::new(out))?;
 
-    let mut snapshot = crate::collect::poll(&endpoints, cluster.clone()).await;
-    snapshot.foreign = foreign.clone();
+    let mut snapshot = ClusterSnapshot {
+        cluster: cluster.clone(),
+        nodes: seeds.iter().map(|e| Node::unreached(e)).collect(),
+        foreign: BTreeMap::new(),
+    };
     let mut findings = crate::doctor::all(&snapshot);
-    let mut last = std::time::Instant::now();
+
+    let (snap_tx, snap_rx) = std::sync::mpsc::channel::<ClusterSnapshot>();
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+    // The seeds the draw loop keeps for a synchronous measurement cleanup on quit: the process
+    // exits when this returns, before the background task would run its own.
+    let cleanup_seeds = seeds.clone();
+    {
+        let cluster = cluster.clone();
+        tokio::spawn(async move {
+            let mut endpoints = seeds;
+            let mut foreign = BTreeMap::new();
+            if discover {
+                let (heard, _problem) = crate::seeds::add_heard(
+                    &mut endpoints,
+                    cluster.as_deref(),
+                    Duration::from_millis(1200),
+                );
+                foreign = heard;
+            }
+            loop {
+                let mut snap = crate::collect::poll(&endpoints, cluster.clone()).await;
+                snap.foreign = foreign.clone();
+                if snap_tx.send(snap).is_err() {
+                    return;
+                }
+                // Wait `every`, but wake early on a command so a refresh or the measure toggle
+                // is not held for a whole period.
+                let deadline = std::time::Instant::now() + every;
+                loop {
+                    match cmd_rx.try_recv() {
+                        Ok(Cmd::Refresh) => break,
+                        Ok(Cmd::Measure(on)) => {
+                            crate::collect::set_measuring(&endpoints, on).await;
+                            break;
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    }
+                    if std::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        });
+    }
+
     // Whether this view switched measurement on; what it switched on, it switches off.
     let mut measuring = false;
-
     let result = loop {
         if let Err(e) = terminal.draw(|f| draw(f, &snapshot, &findings)) {
             break Err(e);
         }
+        // Take the newest snapshot the poller produced, dropping any older ones behind it.
+        let mut latest = None;
+        while let Ok(s) = snap_rx.try_recv() {
+            latest = Some(s);
+        }
+        if let Some(s) = latest {
+            snapshot = s;
+            findings = crate::doctor::all(&snapshot);
+        }
         if event::poll(Duration::from_millis(200))? {
             if let Event::Key(key) = event::read()? {
-                if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc) {
-                    break Ok(());
-                }
-                if matches!(key.code, KeyCode::Char('r')) {
-                    last = std::time::Instant::now() - every;
-                }
-                if matches!(key.code, KeyCode::Char('m')) {
-                    measuring = !measuring;
-                    crate::collect::set_measuring(&endpoints, measuring).await;
-                    last = std::time::Instant::now() - every;
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break Ok(()),
+                    KeyCode::Char('r') => {
+                        let _ = cmd_tx.send(Cmd::Refresh);
+                    }
+                    KeyCode::Char('m') => {
+                        measuring = !measuring;
+                        let _ = cmd_tx.send(Cmd::Measure(measuring));
+                    }
+                    _ => {}
                 }
             }
-        }
-        if last.elapsed() >= every {
-            snapshot = crate::collect::poll(&endpoints, cluster.clone()).await;
-            snapshot.foreign = foreign.clone();
-            findings = crate::doctor::all(&snapshot);
-            last = std::time::Instant::now();
         }
     };
 
     if measuring {
-        crate::collect::set_measuring(&endpoints, false).await;
+        crate::collect::set_measuring(&cleanup_seeds, false).await;
     }
     disable_raw_mode()?;
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)?;

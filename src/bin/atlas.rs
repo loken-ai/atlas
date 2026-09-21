@@ -52,7 +52,7 @@ enum Command {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let (endpoints, cluster) =
+    let (seeds, cluster) =
         match atlas_core::seeds::from_flags_and_file(&cli.nodes, cli.config.as_deref()) {
             Ok(v) => v,
             Err(e) => {
@@ -61,34 +61,49 @@ async fn main() -> ExitCode {
             }
         };
     // Listening, never announcing: a probe that joins the group becomes a peer the router can
-    // hand work to. It is also the only way to see a cluster that is not this one.
-    let mut endpoints = endpoints;
-    let mut foreign = std::collections::BTreeMap::new();
-    if !cli.no_discovery {
-        let (heard, problem) = atlas_core::seeds::add_heard(
-            &mut endpoints,
-            cluster.as_deref(),
-            Duration::from_millis(1200),
-        );
-        foreign = heard;
-        // A node on this host already holds the port on the machine most likely to be watched
-        // from. Say so once and carry on with the seeds.
-        if let Some(problem) = problem {
-            eprintln!("{problem}");
+    // hand work to, and it is also the only way to see a cluster that is not this one. `watch`
+    // does this in its background loop so the window paints at once; the one-shot commands
+    // listen here, before the single poll they each make.
+    let discover = !cli.no_discovery;
+    // What `doctor` and `export` share: discover, refuse an empty cluster, then poll once.
+    async fn one_shot(
+        seeds: Vec<String>,
+        cluster: Option<String>,
+        discover: bool,
+    ) -> Option<atlas_core::model::ClusterSnapshot> {
+        let mut endpoints = seeds;
+        let mut foreign = std::collections::BTreeMap::new();
+        if discover {
+            let (heard, problem) = atlas_core::seeds::add_heard(
+                &mut endpoints,
+                cluster.as_deref(),
+                Duration::from_millis(1200),
+            );
+            foreign = heard;
+            if let Some(problem) = problem {
+                eprintln!("{problem}");
+            }
         }
-    }
-    if endpoints.is_empty() {
-        eprintln!("no nodes: pass --node URL, or --config with a [cluster] block");
-        return ExitCode::from(2);
+        if endpoints.is_empty() {
+            eprintln!("no nodes: pass --node URL, or --config with a [cluster] block");
+            return None;
+        }
+        let mut snapshot = atlas_core::collect::poll(&endpoints, cluster).await;
+        snapshot.foreign = foreign;
+        Some(snapshot)
     }
 
     match cli.command.unwrap_or(Command::Watch { every: 5 }) {
         Command::Watch { every } => {
+            if seeds.is_empty() && !discover {
+                eprintln!("no nodes: pass --node URL, --config with a [cluster] block, or drop --no-discovery");
+                return ExitCode::from(2);
+            }
             return match atlas_core::tui::run(
-                endpoints,
+                seeds,
                 cluster,
                 Duration::from_secs(every.max(1)),
-                foreign,
+                discover,
             )
             .await
             {
@@ -100,8 +115,9 @@ async fn main() -> ExitCode {
             };
         }
         Command::Doctor => {
-            let mut snapshot = atlas_core::collect::poll(&endpoints, cluster).await;
-            snapshot.foreign = foreign;
+            let Some(snapshot) = one_shot(seeds, cluster, discover).await else {
+                return ExitCode::from(2);
+            };
             let findings = doctor::all(&snapshot);
             for f in &findings {
                 println!("{}: {}", doctor::title(f.rule), f.detail);
@@ -111,8 +127,9 @@ async fn main() -> ExitCode {
         }
         Command::Export { listen } => {
             let _ = listen;
-            let mut snapshot = atlas_core::collect::poll(&endpoints, cluster).await;
-            snapshot.foreign = foreign;
+            let Some(snapshot) = one_shot(seeds, cluster, discover).await else {
+                return ExitCode::from(2);
+            };
             print!("{}", metrics::encode(&snapshot, &doctor::all(&snapshot)));
             ExitCode::SUCCESS
         }
