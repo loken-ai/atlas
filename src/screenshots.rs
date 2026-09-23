@@ -141,6 +141,10 @@ fn cluster_window() {
         // than one that never polled.
         polled_at: Some(Instant::now()),
         note: None,
+        endpoints: vec![
+            "http://192.0.2.10:11435".to_string(),
+            "http://192.0.2.11:11435".to_string(),
+        ],
     }));
 
     let mut harness = egui_kittest::Harness::builder()
@@ -150,10 +154,6 @@ fn cluster_window() {
             Gui {
                 measure: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 shared,
-                endpoints: vec![
-                    "http://192.0.2.10:11435".to_string(),
-                    "http://192.0.2.11:11435".to_string(),
-                ],
                 every: Duration::from_secs(5),
                 refresh_now: Arc::new(AtomicBool::new(false)),
             }

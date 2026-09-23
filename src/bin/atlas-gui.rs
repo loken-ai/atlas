@@ -38,7 +38,7 @@ struct Cli {
 
 fn main() -> eframe::Result<()> {
     let cli = Cli::parse();
-    let (mut endpoints, cluster) =
+    let (seeds, cluster) =
         match atlas_core::seeds::from_flags_and_file(&cli.nodes, cli.config.as_deref()) {
             Ok(v) => v,
             Err(e) => {
@@ -46,29 +46,20 @@ fn main() -> eframe::Result<()> {
                 std::process::exit(2);
             }
         };
-
-    let mut foreign = std::collections::BTreeMap::new();
-    let mut note = None;
-    if !cli.no_discovery {
-        let (heard, problem) = atlas_core::seeds::add_heard(
-            &mut endpoints,
-            cluster.as_deref(),
-            Duration::from_millis(1200),
+    if seeds.is_empty() && cli.no_discovery {
+        eprintln!(
+            "no nodes: pass --node URL, --config with a [cluster] block, or drop --no-discovery"
         );
-        foreign = heard;
-        note = problem;
-    }
-    if endpoints.is_empty() {
-        eprintln!("no nodes: pass --node URL, or --config with a [cluster] block");
         std::process::exit(2);
     }
 
     let shared = Arc::new(Mutex::new(Shared {
-        note,
+        endpoints: seeds.clone(),
         ..Default::default()
     }));
     let refresh_now = Arc::new(AtomicBool::new(false));
     let every = Duration::from_secs(cli.every.max(1));
+    let discover = !cli.no_discovery;
 
     eframe::run_native(
         "atlas",
@@ -79,7 +70,6 @@ fn main() -> eframe::Result<()> {
         Box::new({
             let shared = shared.clone();
             let refresh_now = refresh_now.clone();
-            let endpoints_for_task = endpoints.clone();
             move |cc| {
                 // Without these every SVG icon draws as the missing-image placeholder.
                 egui_extras::install_image_loaders(&cc.egui_ctx);
@@ -89,8 +79,8 @@ fn main() -> eframe::Result<()> {
                 let measure = Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let measure_for_task = measure.clone();
                 let mut measuring = false;
-                let cluster = cluster.clone();
-                let foreign = foreign.clone();
+                let mut roster =
+                    atlas_core::seeds::Roster::new(seeds, cluster.clone(), discover, every);
                 // Its own thread and runtime: the window must never wait on a node.
                 std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
@@ -98,33 +88,40 @@ fn main() -> eframe::Result<()> {
                         .build()
                         .expect("runtime");
                     rt.block_on(async move {
+                        let mut previous = atlas_core::model::ClusterSnapshot::default();
                         loop {
+                            let (joined, heard) = roster.refresh(&previous);
+                            let endpoints = roster.endpoints().to_vec();
                             let wanted =
                                 measure_for_task.load(std::sync::atomic::Ordering::Relaxed);
                             if wanted != measuring {
-                                atlas_core::collect::set_measuring(&endpoints_for_task, wanted)
-                                    .await;
+                                atlas_core::collect::set_measuring(&endpoints, wanted).await;
                                 measuring = wanted;
+                            } else if measuring && !joined.is_empty() {
+                                atlas_core::collect::set_measuring(&joined, true).await;
                             }
                             let mut snapshot =
-                                atlas_core::collect::poll(&endpoints_for_task, cluster.clone())
-                                    .await;
-                            snapshot.foreign = foreign.clone();
+                                atlas_core::collect::poll(&endpoints, cluster.clone()).await;
+                            snapshot.foreign = heard.foreign;
+                            previous = snapshot.clone();
                             let findings = atlas_core::doctor::all(&snapshot);
                             {
                                 let mut shared = shared_for_task.lock().expect("shared state");
                                 shared.snapshot = snapshot;
                                 shared.findings = findings;
                                 shared.polled_at = Some(Instant::now());
+                                shared.note = heard.problem;
+                                shared.endpoints = endpoints;
                             }
                             ctx.request_repaint();
                             // Wake early when Refresh is pressed rather than sleeping the
                             // whole cadence: the button is useless if it takes effect in five
-                            // seconds.
+                            // seconds. A node that just announced itself wakes it too.
                             let deadline = Instant::now() + every;
                             while Instant::now() < deadline {
                                 if refresh_for_task
                                     .swap(false, std::sync::atomic::Ordering::Relaxed)
+                                    || roster.newcomer()
                                 {
                                     break;
                                 }
@@ -135,7 +132,6 @@ fn main() -> eframe::Result<()> {
                 });
                 Ok(Box::new(Gui {
                     shared,
-                    endpoints,
                     every,
                     refresh_now,
                     measure,

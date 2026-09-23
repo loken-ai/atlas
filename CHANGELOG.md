@@ -18,3 +18,4 @@ All notable changes to this project are documented here, in the format of
 - Watch: paints from the first frame and polls in the background, so a slow node never holds the screen.
 - Watch: GPU and CPU utilization on every device row, and decode and prefill throughput per node.
 - Watch: a streamed model's per-card residency in gigabytes, and a model shown as loading while it warms.
+- Discovery: watch and the window start with no node and keep listening, so nodes started later appear and departed ones leave.

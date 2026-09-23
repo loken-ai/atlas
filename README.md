@@ -32,9 +32,12 @@ address, host or model. Regenerate them with
 `cargo test --release --all-features screenshots -- --ignored`.
 
 Node addresses come from `--node`, from a config file, or from listening. None are compiled in.
-A bare `host:port` is taken as `http://`, and both binaries listen for announcements before
-deciding they have no node to watch. The same daemon reached at two addresses, `localhost` and
-the one it advertises, is one node: nodes are told apart by the id they give themselves.
+A bare `host:port` is taken as `http://`. `atlas watch` and `atlas-gui` start with no node at
+all and keep listening: a node appears as soon as it announces itself, and one found this way
+leaves once it has stopped both announcing and answering. Nodes named with `--node` or in the
+config file always stay. `doctor` and `export` listen once before their single poll. The same
+daemon reached at two addresses, `localhost` and the one it advertises, is one node: nodes are
+told apart by the id they give themselves.
 
 ## Where a step's time goes
 

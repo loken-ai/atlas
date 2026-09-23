@@ -2,10 +2,14 @@
 //!
 //! None are compiled in: this tool exists partly because the harness it replaces curled two
 //! hardcoded addresses that would rot in a repository. The flags and the config file are
-//! unioned, and listening adds to that at startup.
+//! unioned. The one-shot commands add what one listening window hears; the views keep
+//! listening and refresh the list every round.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use crate::discovery::{Heard, Listener};
+use crate::model::ClusterSnapshot;
 
 /// Endpoints and the cluster name, from the flags and an optional config file. The file has
 /// the same `[cluster]` block a node reads, so an operator points atlas at the node's own
@@ -77,6 +81,97 @@ pub fn add_heard(
     }
 }
 
+/// The endpoints for one round of a view.
+///
+/// The seeds always stay, drawn unreached when down. A node heard announcing is added. A node
+/// found earlier that has gone silent stays while it still answers, since multicast can be
+/// lost on a path that carries HTTP; silent and unreachable, it leaves.
+pub fn current<'a>(
+    seeds: &[String],
+    heard: &Heard,
+    answered: impl IntoIterator<Item = &'a str>,
+) -> Vec<String> {
+    let mut out: Vec<String> = seeds.to_vec();
+    out.extend(heard.ours.values().map(|e| normalise(e)));
+    out.extend(answered.into_iter().map(normalise));
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// What a long-running view polls, refreshed every round from the seeds and from what the
+/// listener still hears.
+pub struct Roster {
+    seeds: Vec<String>,
+    listener: Option<Listener>,
+    every: Duration,
+    /// When the previous round started: what was heard since then is still announcing.
+    since: Instant,
+    endpoints: Vec<String>,
+}
+
+impl Roster {
+    /// Listening, never announcing, and only when `discover` is set.
+    pub fn new(
+        seeds: Vec<String>,
+        cluster: Option<String>,
+        discover: bool,
+        every: Duration,
+    ) -> Self {
+        Self {
+            listener: discover.then(|| Listener::spawn(cluster, every)),
+            endpoints: seeds.clone(),
+            seeds,
+            every,
+            since: Instant::now(),
+        }
+    }
+
+    pub fn endpoints(&self) -> &[String] {
+        &self.endpoints
+    }
+
+    /// Starts a round after `previous`, and returns the endpoints that joined with it along
+    /// with what was heard. A sender counts as announcing if heard since the previous round
+    /// started, or within one period when that round was cut short.
+    pub fn refresh(&mut self, previous: &ClusterSnapshot) -> (Vec<String>, Heard) {
+        let now = Instant::now();
+        let since = now
+            .checked_sub(self.every)
+            .map_or(self.since, |t| t.min(self.since));
+        let heard = self
+            .listener
+            .as_ref()
+            .map(|l| l.heard_since(since))
+            .unwrap_or_default();
+        let answered = previous
+            .nodes
+            .iter()
+            .filter(|n| n.rtt_ms.is_some())
+            .map(|n| n.endpoint.as_str());
+        let next = current(&self.seeds, &heard, answered);
+        let joined = next
+            .iter()
+            .filter(|e| !self.endpoints.contains(e))
+            .cloned()
+            .collect();
+        self.endpoints = next;
+        self.since = now;
+        (joined, heard)
+    }
+
+    /// Whether a node is announcing that this round does not poll yet, so the view can start
+    /// the next round now rather than at the end of its period.
+    pub fn newcomer(&self) -> bool {
+        self.listener.as_ref().is_some_and(|l| {
+            l.heard_since(self.since)
+                .ours
+                .values()
+                .any(|e| !self.endpoints.contains(&normalise(e)))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +222,44 @@ mod tests {
             .expect("no file is not an error");
         assert_eq!(out, vec!["http://192.0.2.9:11435"]);
         assert!(cluster.is_none());
+    }
+
+    fn heard(pairs: &[(&str, &str)]) -> Heard {
+        Heard {
+            ours: pairs
+                .iter()
+                .map(|(id, e)| (id.to_string(), e.to_string()))
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    /// A seed stays when nothing is heard and nothing answers: the operator named it.
+    #[test]
+    fn a_seed_stays_when_silent() {
+        let out = current(&["http://192.0.2.1:11435".into()], &Heard::default(), []);
+        assert_eq!(out, vec!["http://192.0.2.1:11435"]);
+    }
+
+    /// A node heard announcing joins, in the one spelling, once.
+    #[test]
+    fn a_heard_node_joins_once() {
+        let out = current(
+            &["http://192.0.2.1:11435".into()],
+            &heard(&[("a", "192.0.2.1:11435/"), ("b", "http://192.0.2.2:11435")]),
+            ["http://192.0.2.2:11435"],
+        );
+        assert_eq!(
+            out,
+            vec!["http://192.0.2.1:11435", "http://192.0.2.2:11435"]
+        );
+    }
+
+    /// Silent but answering stays; silent and not answering leaves.
+    #[test]
+    fn a_silent_node_leaves_only_when_it_stops_answering() {
+        let out = current(&[], &Heard::default(), ["http://192.0.2.2:11435"]);
+        assert_eq!(out, vec!["http://192.0.2.2:11435"]);
+        assert!(current(&[], &Heard::default(), []).is_empty());
     }
 }

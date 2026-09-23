@@ -25,13 +25,14 @@ pub struct Shared {
     pub snapshot: ClusterSnapshot,
     pub findings: Vec<Finding>,
     pub polled_at: Option<Instant>,
-    /// Set once at startup when the discovery socket could not be opened.
+    /// Why discovery cannot listen, for as long as it cannot.
     pub note: Option<String>,
+    /// What the latest round polled: the seeds and every node still announcing or answering.
+    pub endpoints: Vec<String>,
 }
 
 pub struct Gui {
     pub shared: Arc<Mutex<Shared>>,
-    pub endpoints: Vec<String>,
     pub every: Duration,
     /// Set by the Refresh button and cleared by the polling task.
     pub refresh_now: Arc<AtomicBool>,
@@ -61,7 +62,7 @@ impl eframe::App for Gui {
     /// observer has gone pays the synchronisation for nobody.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if self.measure.swap(false, Ordering::Relaxed) {
-            let endpoints = self.endpoints.clone();
+            let endpoints = self.shared.lock().expect("shared state").endpoints.clone();
             if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -72,13 +73,14 @@ impl eframe::App for Gui {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let (snapshot, findings, polled_at, note) = {
+        let (snapshot, findings, polled_at, note, polled) = {
             let shared = self.shared.lock().expect("shared state");
             (
                 shared.snapshot.clone(),
                 shared.findings.clone(),
                 shared.polled_at,
                 shared.note.clone(),
+                shared.endpoints.len(),
             )
         };
 
@@ -99,7 +101,7 @@ impl eframe::App for Gui {
                     );
                     ui.separator();
                     ui.label(
-                        egui::RichText::new(format!("{} nodes polled", self.endpoints.len()))
+                        egui::RichText::new(format!("{polled} nodes polled"))
                             .size(11.0)
                             .color(view::MUTED),
                     );
@@ -182,7 +184,6 @@ mod tests {
             .with_size(egui::vec2(1000.0, 700.0))
             .build_eframe(move |_cc| Gui {
                 shared: Arc::new(Mutex::new(shared)),
-                endpoints: vec!["http://192.0.2.10:11435".to_string()],
                 every: Duration::from_secs(5),
                 refresh_now: Arc::new(AtomicBool::new(false)),
                 measure: Arc::new(AtomicBool::new(false)),
@@ -210,6 +211,7 @@ mod tests {
             findings,
             polled_at: Some(Instant::now()),
             note: None,
+            endpoints: vec!["http://192.0.2.10:11435".to_string()],
         });
         assert!(harness.query_by_label_contains("Refresh").is_some(), "bar");
         assert!(

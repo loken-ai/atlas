@@ -122,7 +122,13 @@ fn node_lines(node: &Node) -> Vec<Line<'static>> {
         // Throughput the node has measured. Zero is never-measured, not zero speed, so an
         // unmeasured rate is a dash. Prefill and decode differ by an order of magnitude on a
         // streamed model, so they are named apart rather than summed.
-        let rate = |v: f64| if v > 0.0 { format!("{v:.1}") } else { "-".to_string() };
+        let rate = |v: f64| {
+            if v > 0.0 {
+                format!("{v:.1}")
+            } else {
+                "-".to_string()
+            }
+        };
         if state.decode_tok_per_s > 0.0 || state.prefill_tok_per_s > 0.0 {
             out.push(Line::styled(
                 format!(
@@ -238,16 +244,25 @@ fn layer_cell(t: &crate::model::LayerTime) -> String {
 /// the code rather than from a terminal someone happened to photograph.
 #[cfg(test)]
 pub fn draw_for_test(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
-    draw(frame, snapshot, findings);
+    draw(frame, snapshot, findings, None);
 }
 
-fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding]) {
+/// `note` says why discovery cannot listen, while it cannot.
+fn draw(frame: &mut Frame, snapshot: &ClusterSnapshot, findings: &[Finding], note: Option<&str>) {
     // Both panels are composed before the layout, so each is sized from the lines it draws:
     // an empty verdict is one line of words, never a frame around nothing.
     let mut node_body = Vec::new();
+    if let Some(note) = note {
+        node_body.push(Line::styled(
+            note.to_string(),
+            Style::default().fg(Color::Yellow),
+        ));
+    }
+    // A view with no seed runs only with discovery on, so an empty list is one still
+    // waiting for an announcement.
     if snapshot.nodes.is_empty() {
         node_body.push(Line::styled(
-            "no node contacted",
+            "listening for announcements",
             Style::default().fg(Color::DarkGray),
         ));
     }
@@ -309,12 +324,12 @@ enum Cmd {
 }
 
 /// Run until `q` or Escape. The window paints from the first frame with the seeds drawn as
-/// nodes not yet reached, and a background task discovers, polls, and sends snapshots, so
-/// neither a node's latency nor the discovery window ever holds the screen. Discovery listens
-/// once, off the first paint, because listening blocks for its window and a node on this host
-/// holding the port must not hold the terminal. What it hears rides in every snapshot's
-/// `foreign`, since no node reports a neighbouring cluster and the `foreign-cluster` rule needs
-/// it here as much as `doctor` does.
+/// nodes not yet reached, and a background task polls and sends snapshots, so a node's latency
+/// never holds the screen. With `discover`, a listener runs for the life of the view: every
+/// round polls the seeds and whatever still announces, a node that announces between rounds
+/// starts the next one at once, and a socket that cannot be opened is retried. What it hears
+/// from another cluster rides in every snapshot's `foreign`, since no node reports a
+/// neighbouring cluster and the `foreign-cluster` rule needs it here as much as `doctor` does.
 pub async fn run(
     seeds: Vec<String>,
     cluster: Option<String>,
@@ -332,45 +347,49 @@ pub async fn run(
         foreign: BTreeMap::new(),
     };
     let mut findings = crate::doctor::all(&snapshot);
+    let mut note: Option<String> = None;
 
-    let (snap_tx, snap_rx) = std::sync::mpsc::channel::<ClusterSnapshot>();
+    let (snap_tx, snap_rx) = std::sync::mpsc::channel::<(ClusterSnapshot, Option<String>)>();
     let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
-    // The seeds the draw loop keeps for a synchronous measurement cleanup on quit: the process
-    // exits when this returns, before the background task would run its own.
-    let cleanup_seeds = seeds.clone();
+    // The endpoints of the latest round, kept by the draw loop for a synchronous measurement
+    // cleanup on quit: the process exits when this returns, before the background task would
+    // run its own.
+    let polled = std::sync::Arc::new(std::sync::Mutex::new(seeds.clone()));
     {
         let cluster = cluster.clone();
+        let polled = polled.clone();
+        let mut previous = snapshot.clone();
         tokio::spawn(async move {
-            let mut endpoints = seeds;
-            let mut foreign = BTreeMap::new();
-            if discover {
-                let (heard, _problem) = crate::seeds::add_heard(
-                    &mut endpoints,
-                    cluster.as_deref(),
-                    Duration::from_millis(1200),
-                );
-                foreign = heard;
-            }
+            let mut roster = crate::seeds::Roster::new(seeds, cluster.clone(), discover, every);
+            let mut measuring = false;
             loop {
+                let (joined, heard) = roster.refresh(&previous);
+                let endpoints = roster.endpoints().to_vec();
+                *polled.lock().unwrap_or_else(|e| e.into_inner()) = endpoints.clone();
+                if measuring && !joined.is_empty() {
+                    crate::collect::set_measuring(&joined, true).await;
+                }
                 let mut snap = crate::collect::poll(&endpoints, cluster.clone()).await;
-                snap.foreign = foreign.clone();
-                if snap_tx.send(snap).is_err() {
+                snap.foreign = heard.foreign;
+                previous = snap.clone();
+                if snap_tx.send((snap, heard.problem)).is_err() {
                     return;
                 }
                 // Wait `every`, but wake early on a command so a refresh or the measure toggle
-                // is not held for a whole period.
+                // is not held for a whole period, and on a node that just announced itself.
                 let deadline = std::time::Instant::now() + every;
                 loop {
                     match cmd_rx.try_recv() {
                         Ok(Cmd::Refresh) => break,
                         Ok(Cmd::Measure(on)) => {
                             crate::collect::set_measuring(&endpoints, on).await;
+                            measuring = on;
                             break;
                         }
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => return,
                         Err(std::sync::mpsc::TryRecvError::Empty) => {}
                     }
-                    if std::time::Instant::now() >= deadline {
+                    if std::time::Instant::now() >= deadline || roster.newcomer() {
                         break;
                     }
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -382,7 +401,7 @@ pub async fn run(
     // Whether this view switched measurement on; what it switched on, it switches off.
     let mut measuring = false;
     let result = loop {
-        if let Err(e) = terminal.draw(|f| draw(f, &snapshot, &findings)) {
+        if let Err(e) = terminal.draw(|f| draw(f, &snapshot, &findings, note.as_deref())) {
             break Err(e);
         }
         // Take the newest snapshot the poller produced, dropping any older ones behind it.
@@ -390,8 +409,9 @@ pub async fn run(
         while let Ok(s) = snap_rx.try_recv() {
             latest = Some(s);
         }
-        if let Some(s) = latest {
+        if let Some((s, n)) = latest {
             snapshot = s;
+            note = n;
             findings = crate::doctor::all(&snapshot);
         }
         if event::poll(Duration::from_millis(200))? {
@@ -412,7 +432,8 @@ pub async fn run(
     };
 
     if measuring {
-        crate::collect::set_measuring(&cleanup_seeds, false).await;
+        let endpoints = polled.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        crate::collect::set_measuring(&endpoints, false).await;
     }
     disable_raw_mode()?;
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -545,6 +566,17 @@ mod tests {
         assert!(text.contains("degraded"));
         assert!(text.contains("decode"));
     }
+
+    /// With no node yet, the view says it is waiting for one rather than that none exists.
+    #[test]
+    fn an_empty_cluster_is_shown_as_listening() {
+        let screen = rendered(&ClusterSnapshot::default(), &[]);
+        assert!(
+            screen.contains("listening for announcements"),
+            "no word on the empty panel:\n{screen}"
+        );
+    }
+
     /// A clean cluster is told so in words, in the panel and not clipped out of it.
     #[test]
     fn an_empty_verdict_is_worded_rather_than_drawn_as_an_empty_box() {

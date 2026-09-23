@@ -62,8 +62,9 @@ async fn main() -> ExitCode {
         };
     // Listening, never announcing: a probe that joins the group becomes a peer the router can
     // hand work to, and it is also the only way to see a cluster that is not this one. `watch`
-    // does this in its background loop so the window paints at once; the one-shot commands
-    // listen here, before the single poll they each make.
+    // keeps listening in its background loop, so it starts with no node and follows the ones
+    // that come and go; the one-shot commands listen once here, before the single poll they
+    // each make.
     let discover = !cli.no_discovery;
     // What `doctor` and `export` share: discover, refuse an empty cluster, then poll once.
     async fn one_shot(

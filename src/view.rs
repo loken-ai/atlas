@@ -314,9 +314,11 @@ pub fn cluster(ui: &mut egui::Ui, snapshot: &ClusterSnapshot) {
         ui.add_space(8.0);
     }
 
+    // A view with no seed runs only with discovery on, so an empty list is one still waiting
+    // for an announcement.
     if snapshot.nodes.is_empty() {
         ui.label(
-            RichText::new("No node contacted yet.")
+            RichText::new("Listening for announcements.")
                 .size(11.0)
                 .color(MUTED)
                 .italics(),
